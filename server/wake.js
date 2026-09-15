@@ -1,38 +1,31 @@
-// The bell a resident agent waits on.
+// The bell an agent's waits are rung on.
 //
-// A resident asks "anything for me?" for as long as it lives, and until this
-// file it asked on a timer that slowed down while nothing happened - up to a
-// minute between looks. A person who says something to an agent and watches
-// the chat for a minute concludes the agent does not work, and they are not
-// wrong: a minute is not a conversation.
-//
-// So instead of answering "no" and hanging up, the poll route holds the
-// question open (resident.js) and this is what wakes it: whoever posts a
-// message rings the key it was posted under, whoever sends a task rings the
-// agent it was sent to, and a poll waiting on either of those keys is
-// answered at once. Nothing is queued here - the poll re-reads the records
+// Two things here are worth waiting for rather than polling: a task sent to
+// an agent, and a gated call whose approval the owner is about to press. The
+// waiter holds its question open (mcp.js `approvalGate`) and this is what
+// answers it: whoever sends a task rings the agent it was sent to, whoever
+// decides an approval rings that call, and a wait on either of those keys is
+// answered at once. Nothing is queued here - the waiter re-reads the records
 // when it wakes - so a bell that rings with nobody listening is nothing, and
 // a bell that rings twice is one look.
 //
 // Keys are strings and mean whatever the caller and the waiter agree on. In
-// practice they are a chat key (`<repoId>` for a room, `agent:<id>` for
-// the owner's private line - see agent-chat.js) and `agent:<id>` again for a
-// task, which is the same key on purpose: both mean "this agent has something".
+// practice they are `agent:<id>` for a task and the approval's own key for a
+// gated call (action-approvals.js `wakeKey`).
 //
-// A bell only reaches an agent that is listening. One whose machine is asleep
-// or whose process has died hears nothing, and until resident.js started
-// watching the bell (`onRing`) that agent stayed silent until somebody
-// noticed - which is the "it does not answer" that every other fix here was
-// for. So a ring carries what rang it - the message, the task - and the
-// watcher decides whether somebody who is not listening should be got up.
+// A bell only reaches something that is listening. An agent whose machine is
+// asleep or whose process has died hears nothing, and nothing here gets it
+// up - so a ring carries what rang it, and a watcher (`onRing`) decides what
+// that means: guidance.js counts what a task set off, and says so on the
+// session that starts when the agent next comes up.
 import { EventEmitter } from "node:events";
 
 const bell = new EventEmitter();
 // One listener per waiting poll, and a busy server has many polls waiting.
 bell.setMaxListeners(0);
 
-// Watchers apart from waiters, so `waiting()` still counts polls and only
-// polls, and a watcher that throws cannot take a poll down with it.
+// Watchers apart from waiters, so `waiting()` still counts waits and only
+// waits, and a watcher that throws cannot take a wait down with it.
 const watchers = new EventEmitter();
 watchers.setMaxListeners(0);
 
@@ -48,8 +41,8 @@ export function wake(key, payload = null) {
 }
 
 /**
- * Be told of every ring, with what rang it. For whoever gets up an agent
- * that was not listening; a waiter uses `waitFor`.
+ * Be told of every ring, with what rang it. For whoever wants to know that
+ * something happened rather than to wait for it; a waiter uses `waitFor`.
  *
  * @param {(key: string, payload: unknown) => void} watcher
  * @returns {() => void} stop watching
@@ -89,5 +82,5 @@ export function waitFor(keys, { timeoutMs, signal } = {}) {
   });
 }
 
-/** How many polls are waiting right now. For tests, and for a status line. */
+/** How many waits are open right now. For tests, and for a status line. */
 export const waiting = () => bell.listenerCount("wake");

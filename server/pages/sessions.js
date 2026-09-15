@@ -55,6 +55,9 @@ export function describeSession(scope, session, { pulls: records = [], names = n
     yield: performance.yieldOf(session, records, [], {}),
     pulls: performance.pullsOf(session, records).map((pull) => ({
       id: pull.id, number: pull.number, url: pull.url ?? null, state: pull.state, repo: pull.repo ?? null,
+      // Which git host, so the card can call a GitLab one a merge request
+      // and link to the right place (git-hosts/index.js).
+      host: pull.host ?? "github",
       title: pull.title ?? null, changesRequested: performance.roundsOf(pull),
       // And what became of it after it merged (pulls.js): taken back out,
       // followed by a fix, red on the branch, or in production.
@@ -139,12 +142,11 @@ function describeSessionMachine(machine) {
 }
 
 /**
- * What set a session off, with where that thing lives named: the repo a
- * task or a room line belongs to (`key` is its id), or the agent whose
- * private line was spoken on (`key` is `agent:<id>`). The page links to
- * the place - the repo's Tasks or Chat tab, the agent's Chat tab - so the
- * words that set an agent going are one click from the work they set going,
- * without being on the record (sessions.js).
+ * What set a session off, with where that thing lives named: the repo the
+ * task belongs to (`key` is its id). Records written before the messaging
+ * went (2026-09) can name an agent's private line instead (`key` is
+ * `agent:<id>`), and those are still described, so an old session still
+ * says what set it going.
  */
 function describeTrigger(trigger) {
   if (!trigger?.kind) return null;
@@ -185,8 +187,8 @@ function backAt(record, sessionId) {
 export const busy = (record) => (record.sessionIds ?? []).some((id) => backAt(record, id));
 
 /**
- * What a session is doing this second, and who the viewer can talk to
- * about it - the Home page's additions to a session record.
+ * What a session is doing this second - the Home page's additions to a
+ * session record.
  *
  * A session is counts and ids, which is enough to say "Ada has been at it
  * for twenty minutes" but not what she is at. That lives on the activity
@@ -195,11 +197,11 @@ export const busy = (record) => (record.sessionIds ?? []).some((id) => backAt(re
  * session route draws: the owner and the repo's members see it, everybody
  * else sees that a tool is running and which one.
  *
- * `talk` is where a line about this work goes. An agent of the viewer's own
- * has a private line; an agent in a repo the viewer is on is reached
- * through that repo's chat, tagged; anything else - a setup on somebody's
- * laptop, a stranger's agent - has nowhere to hear it, and says so with null
- * rather than with a box that posts into the void.
+ * Nothing here is a way to reach the agent. There was one until 2026-09 -
+ * a box that posted a line into the repo's chat or onto the agent's private
+ * line - and it went with the messaging. What a person hands an agent now
+ * is a task; what they answer it with is the Resume on the task it stopped
+ * on, which `task.waitingOn` below is what the card draws.
  */
 export function nowOf(scope, session, user, { pulls: byPullId = new Map() } = {}) {
   const repo = session.repoId ? repos.repos.get(session.repoId) : null;
@@ -224,12 +226,6 @@ export function nowOf(scope, session, user, { pulls: byPullId = new Map() } = {}
     const at = backAt(record, session.id);
     if (at) backOn = { repo: record.repo, number: record.number, url: record.url ?? pull.url ?? null, since: at.since };
   }
-  const mine = actor.kind === "agent" && actor.id ? repos.findAgent(actor.id, user) : null;
-  const talk = mine
-    ? { kind: "agent", id: actor.id, name: actor.name }
-    : own && actor.kind === "agent" && repo
-      ? { kind: "repo", id: repo.id, name: repo.name, agent: actor.name }
-      : null;
   return {
     own,
     doing: running
@@ -240,8 +236,9 @@ export function nowOf(scope, session, user, { pulls: byPullId = new Map() } = {}
     // a provider's message can quote the request - so it stays with the
     // people who could read the request anyway.
     trouble: agent?.trouble ? { since: agent.trouble.since, message: own ? agent.trouble.message : null } : null,
-    // `waitingOn` is the kind alone - "person" is what the box needs to
-    // know, to say that a line brings the task back (acp.js `prompt`).
+    // `waitingOn` is the kind alone - "person" is what the card needs to
+    // know, to draw the Resume that brings the task back (task-waits.js
+    // `resumedByPerson`).
     // The ticket the task does (agent-tasks.js "Outcomes") travels with it,
     // id and link: it is a name in a tracker, the way a pull request's
     // number is a name on GitHub, not something anyone typed here.
@@ -254,7 +251,6 @@ export function nowOf(scope, session, user, { pulls: byPullId = new Map() } = {}
           : null,
       }
       : null,
-    talk,
     backOn,
   };
 }
@@ -286,7 +282,7 @@ export function mount(app, scope) {
     const repo = session.repoId ? repos.repos.get(session.repoId) : null;
     const own = session.owner === req.cv.user || (repo ? repos.canAccess(repo, req.cv.user) : false);
     const records = session.pulls?.length
-      ? (await Promise.all(session.pulls.map((pull) => pulls.get(pull.repo, pull.number).catch(() => null)))).filter(Boolean)
+      ? (await Promise.all(session.pulls.map((pull) => pulls.get(pull.repo, pull.number, pull.host ?? "github").catch(() => null)))).filter(Boolean)
       : [];
     const timeline = (await spans.forSession(session.id)).map((span) => (own ? span : spans.countsOnly(span)));
     // The commands it ran over and over, with their words for whoever may
@@ -314,8 +310,7 @@ export function mount(app, scope) {
       // as the Home page's card, so the session opens with the box the card had.
       now: nowOf(scope, session, req.cv.user),
       // What can be done to it - the buttons to draw, and why not (acp.js).
-      // Steering is the repo's: a member who can read the repo's chat can
-      // say a line in it, which is all a prompt is.
+      // Which is one thing at most: answering a task the agent stopped on.
       steering: own ? scope.tierOf(session) : { tier: "C", prompt: false, cancel: false, latency: null, why: "Not your session to steer." },
       // How to carry it on in the harness that ran it. The same rule as the
       // transcript: this is for the people on the session's repo, who are

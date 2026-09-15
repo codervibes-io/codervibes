@@ -1,10 +1,10 @@
 // Work one agent hands to another.
 //
-// Agents could already talk - `send_message` puts a line in the repo chat
-// and every agent in the room reads it on its next tool result. What they
-// could not do is hand over a *piece of work* and know what became of it. A
-// remark in a chat log is not an assignment: nobody owns it, nothing tracks
-// it, and the agent that made it has no way to find out whether it happened.
+// This is the only way work is handed around here. Agents could once talk -
+// a line in a repo's chat, read on the next tool result - and that messaging
+// went in 2026-09, because a remark in a log is not an assignment: nobody
+// owns it, nothing tracks it, and the agent that made it has no way to find
+// out whether it happened.
 //
 // So a task is a record with two named ends, a state, and a thread back to
 // whatever caused it.
@@ -286,13 +286,12 @@ export function workingOn(registry, agentId) {
  * `since` by somebody other than itself - a report the sender has not read.
  *
  * This is how a "done" reaches whoever sent the task. It used to reach it
- * through the room: the closing line every update posts was overheard, and
+ * through the room: the closing line every update posted was overheard, and
  * the sender was woken and ran a model episode for it - and for every
  * 'accepted' and progress line too, and every summary any agent said to
  * nobody. With four agents that was the sender's context, re-read at the
- * model, for each line any of them typed. So the room does not wake an
- * agent for other agents' lines (agent-chat.js `addressed`), and the report
- * comes this way instead: as the settled task itself, with what the sender needs
+ * model, for each line any of them typed. The report comes this way
+ * instead: as the settled task itself, with what the sender needs
  * to decide what happens next - what the piece was part of, and whether the
  * other pieces of it are in yet. Nothing here for a piece still moving.
  *
@@ -505,7 +504,7 @@ export async function createTask(registry, repo, spec) {
     if ((retrying.attempt ?? 1) >= MAX_ATTEMPTS) {
       throw new TaskError(
         `That is attempt ${retrying.attempt ?? 1} of ${MAX_ATTEMPTS} failing. Do not try the same ` +
-          `thing again: split it, change the approach, or say in chat that it cannot be done as asked.`,
+          `thing again: split it, change the approach, or say on the task that it cannot be done as asked.`,
       );
     }
   }
@@ -645,8 +644,7 @@ export async function updateTask(
       `Task ${task.id} failed at ${task.updatedAt}` +
         (task.failure === "timeout" ? " - its time ran out" : "") +
         `. It cannot be reopened: report what state the work is in (update_task ` +
-        `'failed' with a note, or send_message), and ${task.from.name} decides ` +
-        `whether to retry it.`,
+        `'failed' with a note), and ${task.from.name} decides whether to retry it.`,
     );
   }
 

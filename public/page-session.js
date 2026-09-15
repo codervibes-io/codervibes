@@ -17,12 +17,8 @@ const TRANSCRIPT_KEEP = 1000;
  * @param {() => void} ctx.render
  * @param {(path: string) => void} ctx.go
  * @param {(page: string, id?: string) => string} ctx.pathFor
- * @param {object} [opts]
- * @param {((live: object|null, opts: {steer: boolean}) => Node|null)|null}
- *   [opts.talk] the box you type into - console-home.js `sessionTalk` for
- *   the full console, nothing for a shell without a chat
  */
-export function sessionPage({ state, api, render, go, pathFor }, { talk = null } = {}) {
+export function sessionPage({ state, api, render, go, pathFor }) {
   let loading = null;
 
   /** Whether one session is what the address names. */
@@ -87,10 +83,9 @@ export function sessionPage({ state, api, render, go, pathFor }, { talk = null }
         transcript: state.transcript.id === state.selected ? state.transcript : null,
         onOpen: go,
         pathFor,
-        // A prompt or a stop lands on the log at once; read it back now
-        // rather than at the next nudge.
+        // A stop lands on the log at once; read it back now rather than at
+        // the next nudge.
         onChanged: () => load().then(render),
-        talk,
       }),
     );
   }

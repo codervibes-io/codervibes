@@ -426,9 +426,19 @@ class RepoRegistry {
    * repository in two workspaces are both it: the work of a checkout is
    * the work of every workspace holding that repository.
    */
-  ofRepository(fullName) {
+  /**
+   * The repos of one repository, on one host.
+   *
+   * The host as well as the path, because two hosts can spell a repository
+   * the same way: a session on `ada/engine` at GitLab is not the work of a
+   * repo connected to `ada/engine` at GitHub, and joining them would put
+   * one team's sessions on another's page. A repo record here is a GitHub
+   * one by construction (`source.kind`), so anything but GitHub matches
+   * nothing - which is the right answer rather than a missing case.
+   */
+  ofRepository(fullName, host = "github") {
     const wanted = String(fullName ?? "").trim().toLowerCase();
-    if (!wanted) return [];
+    if (!wanted || (host ?? "github") !== "github") return [];
     return [...this.repos.values()].filter(
       (repo) => repo.source?.kind === "github" && String(repo.source.repo ?? "").toLowerCase() === wanted,
     );
@@ -439,9 +449,9 @@ class RepoRegistry {
    * they own, else the first of it they can open, else none - a checkout
    * of a repository nobody connected here is no repo's work.
    */
-  checkoutFor(fullName, email) {
+  checkoutFor(fullName, email, host = "github") {
     const user = normalizeEmail(email);
-    const reachable = this.ofRepository(fullName).filter((repo) => this.canAccess(repo, user));
+    const reachable = this.ofRepository(fullName, host).filter((repo) => this.canAccess(repo, user));
     return reachable.find((repo) => repo.owner === user) ?? reachable[0] ?? null;
   }
 
@@ -814,13 +824,6 @@ class RepoRegistry {
   async discard(repo) {
     this.repos.delete(repo.id);
     await this.forget(repo.id);
-    // The conversation was about this repo and outlives nothing. Not
-    // awaited on the critical path is deliberate elsewhere; here it is, so a
-    // deleted repo is genuinely gone by the time the route answers. Imported
-    // here because a delete is the one moment the registry needs the chat at
-    // all, and the chat is a whole subsystem to load for it.
-    const { forgetChat } = await import("./repo-chat.js");
-    await forgetChat(repo.id);
   }
 
   /**

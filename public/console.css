@@ -2637,6 +2637,53 @@ button.search-top-name:hover {
   grid-template-columns: 30px minmax(0, 2.4fr) repeat(var(--cells), minmax(0, 1fr));
 }
 
+/* ------------------------------------------- the git hosts (local edition)
+ *
+ * The Connectors page of `npm run local` (public/page-git-hosts.js): three
+ * rows, one per git host, and the last cell of each is a *form* with a token
+ * box in it rather than a fact. No other list here has that, and three
+ * things follow from it that no other list needs.
+ *
+ * The column: a name, a token box and a Connect do not fit in the 1fr a
+ * cell gets, and Bitbucket wants a username box as well. So this table
+ * splits itself down the middle instead. It is written at the same
+ * specificity as `.list-table` above and sits between that rule and the
+ * 860px block below, which is what lets the phone rule still take the
+ * table back to one fact per row.
+ *
+ * The wrapping: at 390px the boxes do not fit on one line either, and
+ * `.focus-form` is the shape of every other form in this console - making
+ * them all wrap would move each of them for the sake of this one. So it
+ * wraps here and nowhere else.
+ *
+ * The cell is marked `keep`, so the phone rule does not drop it: a page
+ * whose only control is hidden below the breakpoint reads as broken rather
+ * than as narrow, which is exactly how three pages shipped once before.
+ */
+.git-hosts-table {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.git-host-form,
+.git-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The name, and the chip that says whether it is connected, on one line -
+   the chip is in the name rather than in a cell of its own, because a phone
+   keeps one cell and that one is the form. */
+.list-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+
 .list-head,
 .list-row {
   display: contents;
@@ -3565,10 +3612,6 @@ a.modal-inline-btn { text-decoration: none; }
 
 .home-done[open] > .home-heading::before { transform: rotate(90deg); }
 
-/* One card per live session. As many across as fit at a readable width,
-   which is two on most desktops and one on a phone (below); a card is
-   tall - it has a task, a doing line and a chat box in it - so three
-   narrow ones would be worse than two. */
 /* A list, one session under the next, never two abreast: a page of cards
    in two columns is read in a zigzag, and the facts on each are the same
    seven, so a column of them reads down like a table. */
@@ -3733,7 +3776,7 @@ a.modal-inline-btn { text-decoration: none; }
 .home-task-title { color: var(--text); }
 .home-task-facts { color: var(--text-faint); font-size: 11px; }
 
-/* What it is doing this second, with the same pulsing dot the chat box
+/* What it is doing this second, with the same pulsing dot a task's line
    uses. Still, in the faint colour, for an agent between calls: the dot
    pulses only while something is happening. */
 .home-doing {
@@ -3744,27 +3787,9 @@ a.modal-inline-btn { text-decoration: none; }
   line-height: 1.5;
 }
 
-.home-doing .chat-doing-dot { animation: none; background: var(--text-faint); }
-.home-doing.moving .chat-doing-dot { animation: rail-pulse 1.6s ease-in-out infinite; background: var(--accent); }
-.home-doing .chat-doing-text { min-width: 0; overflow-wrap: anywhere; }
-
-/* The box on a card: no panel frame inside the card's, a short log, and
-   the field one line high - it is for saying one thing about the work
-   above it, and the agent's page has the whole conversation. */
-.chat-compact {
-  margin: 4px 0 0;
-  padding: 10px 0 0;
-  border: none;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
-  background: none;
-}
-
-.chat-compact .console-hint { margin-top: 0; }
-
-.chat-log-short {
-  max-height: 180px;
-}
+.home-doing .doing-dot { animation: none; background: var(--text-faint); }
+.home-doing.moving .doing-dot { animation: rail-pulse 1.6s ease-in-out infinite; background: var(--accent); }
+.home-doing .doing-text { min-width: 0; overflow-wrap: anywhere; }
 
 /* The chip for a pull request that is still open: the accent, because it
    is the one outcome that is still moving. */
@@ -5986,7 +6011,7 @@ a.modal-inline-btn { text-decoration: none; }
 .task-budget-over { color: var(--warn-text); }
 .task-failed .task-attempt { color: var(--err-text); }
 
-/* What the agent holding it is doing this second. Same dot as the chat's
+/* What the agent holding it is doing this second. Same dot as the card's
    "X is working" line, because it is the same fact seen from the task. */
 .task-doing {
   display: flex;
@@ -6387,115 +6412,14 @@ a.modal-inline-btn { text-decoration: none; }
 
 .text-input { flex: 1; min-width: 140px; }
 
-/* ------------------------------------------------------------- the room */
-
-/* The field under a conversation - the repo's and an agent's, one look.
-   A plain textarea and a Send: it was a "Steer it" block with a heading, a
-   paragraph and a picker, and talking to an agent should look like talking. */
-.chat-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--bg-inset);
-  color: var(--text);
-  font: inherit;
-  resize: vertical;
-}
-
-.chat-input:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-
-.chat-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.chat-log {
-  max-height: 260px;
-  overflow-y: auto;
-  margin-bottom: 10px;
-  padding-right: 4px;
-}
-
-.chat-line {
-  padding: 6px 0;
-  border-top: 1px solid var(--border);
-}
-
-.chat-line:first-child { border-top: none; }
-
-.chat-who {
-  font-weight: 500;
-  font-size: 12px;
-}
-
-/* Marked, not hidden - the same rule the room itself follows. Who said this
-   is a question worth answering honestly. */
-.chat-agent .chat-who { color: var(--accent); }
-
-.chat-about,
-.chat-when {
-  margin-left: 8px;
-  color: var(--text-faint);
-  font-size: 10.5px;
-}
-
-.chat-text {
-  margin: 2px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-/* Who a line is for. Lit so that a room with three agents in it reads as a
-   conversation rather than as a log, and so a tag typed wrong is seen. */
-.chat-tag {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-/* The private line is the whole tab, not a panel in a column, so it gets the
-   height a conversation wants. */
-.chat-log-tall {
-  max-height: min(60vh, 520px);
-  min-height: 160px;
-}
-
-/* An agent being got up for the line just sent - see console-chat.js. */
-.chat-status {
-  margin: 8px 0 0;
-  padding: 6px 10px;
-  border: 1px solid var(--warn-border);
-  border-radius: 6px;
-  background: var(--warn-bg);
-  color: var(--warn-text);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 /*
- * What the agents in the box are doing this moment - "Navigator is
- * thinking…" - see console-chat.js `workingLine`. Not the warning box above
- * it: nothing is wrong, something is happening, and the only colour is the
- * dot, which pulses because an agent in motion is the one thing that does.
+ * The dot beside what an agent is doing this moment - "Navigator is
+ * thinking…" - on the session page (`.home-doing`) and on a task
+ * (`.task-doing`), which set the type around it. Nothing is wrong,
+ * something is happening, and the only colour is the dot, which pulses
+ * because an agent in motion is the one thing that does.
  */
-.chat-doing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.chat-doing-dot {
+.doing-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -6505,7 +6429,7 @@ a.modal-inline-btn { text-decoration: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-doing-dot { animation: none; }
+  .doing-dot { animation: none; }
 }
 
 .share-form {
@@ -7509,6 +7433,13 @@ a.modal-inline-btn { text-decoration: none; }
   }
 
   .list-table.pickable { grid-template-columns: 30px minmax(0, 1fr) auto; }
+
+  /* The git hosts are the one list whose last cell is a form rather than a
+     fact (`.git-hosts-table` above). A token box beside a name in half a
+     phone's width is two columns neither of which works, so here the name
+     takes the line and the form takes the next one - the cell is kept, not
+     dropped, because it is the only control the page has. */
+  .git-hosts-table { grid-template-columns: minmax(0, 1fr); }
 
   .list-head { display: none; }
   .list-cell:not(.keep) { display: none; }

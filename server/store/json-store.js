@@ -23,12 +23,8 @@ const IDENTITIES_FILE = path.join(root, ".codervibes-github.json");
 // document because it is per user rather than per repo, and because it is
 // written rarely and read on every session.
 const PROFILES_FILE = path.join(root, ".codervibes-profiles.json");
-// One document for every repo's conversation. Kept apart from the
-// repo records because it is append-heavy and they are not: a chat
-// message must not rewrite the document that says who owns what.
-const CHAT_FILE = path.join(root, ".codervibes-chat.json");
-// What happened lately - see events.js. Its own document for the same reason
-// as chat: appended to constantly, and nothing else should be rewritten for it.
+// What happened lately - see events.js. Its own document because it is
+// appended to constantly, and nothing else should be rewritten for it.
 const EVENTS_FILE = path.join(root, ".codervibes-events.json");
 /** How many events the file keeps. A day's catch-up on a laptop, not history. */
 const EVENTS_KEPT = 5000;
@@ -166,39 +162,6 @@ export class JsonStore {
     );
   }
 
-  // ---------------------------------------------------------------- chat
-
-  /** The tail of one repo's conversation, oldest first. */
-  async loadChat(repoId, limit) {
-    const rooms = (await readJson(CHAT_FILE))?.rooms ?? {};
-    const messages = rooms[repoId] ?? [];
-    return limit ? messages.slice(-limit) : messages;
-  }
-
-  /**
-   * Append one message, trimming the room to `keep`.
-   *
-   * The trim happens here rather than at read time because this document is
-   * rewritten whole: without it a busy repo would grow a file that every
-   * later message has to re-serialise.
-   */
-  async appendChat(message, { keep = 500 } = {}) {
-    await update(CHAT_FILE, (current) => {
-      const rooms = { ...(current?.rooms ?? {}) };
-      const room = [...(rooms[message.repo] ?? []), message];
-      rooms[message.repo] = room.slice(-keep);
-      return { rooms };
-    });
-  }
-
-  async deleteChat(repoId) {
-    await update(CHAT_FILE, (current) => {
-      const rooms = { ...(current?.rooms ?? {}) };
-      delete rooms[repoId];
-      return { rooms };
-    });
-  }
-
   // -------------------------------------------------------------- events
 
   async appendEvent(event) {
@@ -311,8 +274,12 @@ export class JsonStore {
     }));
   }
 
-  async loadPull(repo, number) {
-    return (await readJson(PULLS_FILE))?.pulls?.[`${repo}#${number}`] ?? null;
+  // Keyed by the record's own id, which is what `putPull` writes it under.
+  // A caller that knows the id hands it over (pulls.js `idOf`, which
+  // prefixes every host but GitHub); one that does not is asking about
+  // GitHub, which is what the pair alone has always meant.
+  async loadPull(repo, number, id = `${repo}#${number}`) {
+    return (await readJson(PULLS_FILE))?.pulls?.[id] ?? null;
   }
 
   /** One repository's, one repo's, or everybody's since a moment; most recently updated first. */

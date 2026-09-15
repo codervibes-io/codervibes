@@ -8,12 +8,12 @@ files in a directory you can read.
 It is the same program as the hosted product, cut down rather than forked.
 Everything the local edition can do, codervibes.io does too; what it
 leaves out is everything that only makes sense with other people in it -
-workspaces, repo chat, tasks handed between agents, connectors, sandbox
-agents, pull request tracking. Four pages remain: **Executors**,
-**Performance**, **Search** and **Tools**. What it is for is the thing
-those four answer, which is the thing you cannot see from inside a
-terminal: what your coding agents actually did, what it cost, and how you
-worked with them.
+workspaces, tasks handed between agents, the connected services
+an agent is lent, sandbox agents. Five pages remain: **Executors**,
+**Performance**, **Search**, **Tools** and **Connectors**. What it is for
+is the thing those answer, which is the thing you cannot see from inside a
+terminal: what your coding agents actually did, what it cost, how you
+worked with them, and what became of the work.
 
 ## Running it
 
@@ -33,28 +33,107 @@ That line configures whichever of Claude Code, Codex, Gemini CLI and
 OpenCode is on the machine to export its OpenTelemetry to this process and
 to report each session as it happens - the prompt, each tool call and what
 came of it, what the agent said back. It is the same script the hosted
-product serves, with two things dialled off: it takes no token, because
-there is nobody to authenticate, and it configures no MCP server, because
-a local installation has no connected services to hand an agent. It does
-not touch which model a harness calls or where it sends it; that is yours
-to set, in the harness.
+product serves, with one thing dialled off: it takes no token, because
+there is nobody to authenticate. It does not touch which model a harness
+calls or where it sends it; that is yours to set, in the harness.
 
 Start a session in any of them and it appears on the Executors page.
+
+## The three tools your agent gets
+
+The same line writes an MCP server named `codervibes` into every harness it
+finds, pointing at `/mcp` on this process. That is the other direction:
+reporting is what your agent tells this app, and these are what it can ask
+it.
+
+- **`discover`** searches every session this installation has seen, in
+  words - what was asked, what was reached for, what was said - and each hit
+  says who did it, when, and quotes the lines that matched.
+- **`open_session`** reads one of those in full by its id: the ask, the
+  calls, the answers. A hit's quote is a fragment; this is how it was
+  actually done.
+- **`name_session`** says what the session doing the asking is for, in a few
+  words. That is its name on the Executors page and in Search; until the
+  agent says, it is named after the first line of the ask.
+
+The first two are the point: **ask `discover` before working something out
+from scratch.** "How do I trigger a deploy", "where does the rotation
+script live" - if one of your agents did it last week, the session that did
+it is the answer, and reading it is cheaper than deriving it again. Tell
+your agent so in its own instructions file; an agent that never calls
+`discover` will rediscover the same thing every Monday.
+
+There is no token on any of it, and none is needed: `/mcp` is checked the
+same way every other request here is, against the socket it arrived on, so
+it answers this machine and nothing else (below). That is also why there is
+no `Authorization` header in any of the config files the line writes.
+
+Three tools and no more. The hosted product's endpoint also carries the repo
+chat, tasks handed between agents, and your connected services as tools -
+all of which need other people or somebody else's credential, and this
+installation has neither.
+
+## Connectors: the git host your work is on
+
+**Connectors** is one page with three rows on it - GitHub, GitLab and
+Bitbucket - and a box to paste a token into. Connect one and the pull
+requests you open there are followed until they merge or close, which is
+what turns "Performance counted an opened pull request" into "Performance
+counted a merged one". Nothing else changes, and nothing else is
+connected: there is no App to install, no OAuth application to register,
+and no callback address a laptop does not have.
+
+What each host's token needs, which is the part people get wrong:
+
+| Host | What to paste | Where it comes from |
+|---|---|---|
+| GitHub | a personal access token that can read pull requests (classic, or fine-grained) | github.com/settings/tokens |
+| GitLab | a personal access token with the `read_api` scope | gitlab.com/-/user_settings/personal_access_tokens |
+| Bitbucket | your **username** and an app password with Pull requests: Read | bitbucket.org/account/settings/app-passwords/ |
+
+Bitbucket wants both halves because it signs in with HTTP Basic, and the
+username is as much of the credential as the password is.
+
+The token is checked with the host before it is kept, so a wrong one is a
+sentence on the page you pasted it into rather than a connection that
+silently does nothing. **It stays on this machine**: it is written to your
+own records under `CODERVIBES_DATA_DIR`, it is never in anything the
+console reads back, and the only address it is ever sent to is the host it
+belongs to. Set `CODERVIBES_TOKEN_SECRET` and it is encrypted there too;
+without it the token sits in that file the way `~/.git-credentials` sits
+in your home directory.
+
+Every five minutes each connected host is asked one question - *my own
+pull requests, updated since* - and what comes back is matched to your
+sessions by repository and branch. Nothing has to have told this app that
+a pull request was opened: a session says which branch its checkout was
+on, the pull request says which branch it came from, and that is the whole
+of the link. **Check now** asks straight away rather than waiting for the
+clock.
+
+Nothing here writes. It reads your own pull requests and nothing else - it
+cannot open one, comment on one or merge one, and a token narrowed to read
+is the right token for it. **Disconnect** forgets the token and stops the
+asking; what was already followed is what happened, and stays.
+
+Until you connect one, nothing on a timer reaches the network at all.
 
 ## What you can set
 
 | Variable | What it does | Default |
 |---|---|---|
 | `PORT` | the port to listen on; it binds to loopback and nothing else | 3592 |
+| `CODERVIBES_TOKEN_SECRET` | encrypts a connected git host's token where it is written | unset; the token is kept as it is |
 | `CODERVIBES_DATA_DIR` | the directory the `.codervibes-*.json` documents are written to | the checkout itself |
 | `CODERVIBES_MAX_EXECUTORS` | how many machines may be seated at once | 3 |
 | `ANTHROPIC_API_KEY` | a key for Explain on the Search page | unset; Explain is off without one |
 | `LITELLM_URL`, `LITELLM_KEY` | a proxy to reach a model and an embeddings model through, instead of the key above | unset |
 
-The last two are the only ones that reach the network at all, and only
+The model variables are the only ones that reach the network, and only
 when you set them: without a model, Search still works - the keyword half
 is in-process - and it just cannot explain what it found or match on
-meaning rather than words.
+meaning rather than words. The other thing that reaches the network is a
+git host, and only once you connect one on the Connectors page.
 
 ## Only this machine
 
@@ -90,12 +169,11 @@ and two sandboxes is what your week actually looks like.
 
 ## What it cannot do
 
-**Performance counts opened pull requests, not merged ones.** "Merged" is
-a fact GitHub holds, and reading it means a GitHub App, an installation
-and a person signing in - all of which are the hosted product. Locally, a
-session that ran `gh pr create` is a session that opened a pull request,
-and that is as far as it goes. The number is still useful; it is just a
-different number, and the page says which it is showing.
+**Performance counts opened pull requests until you connect a git host.**
+"Merged" is a fact the host holds, and until there is a token to ask with,
+a session that ran `gh pr create` is a session that opened a pull request
+and that is as far as it goes. Connect the host on the Connectors page
+above and the same sessions start saying what became of the work.
 
 **One CoderVibes per machine.** `~/.codervibes` holds the env file, the
 hook script, the shipper and the spool, and the harnesses each have one

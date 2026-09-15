@@ -256,8 +256,6 @@ export const api = {
    */
   sessionEvents: (id, since = 0) =>
     request(`/api/sessions/${encodeURIComponent(id)}/events?since=${encodeURIComponent(since)}`),
-  /** ACP's session/prompt: say something to the session's agent, wherever it reads. */
-  promptSession: (id, text) => request(`/api/sessions/${encodeURIComponent(id)}/prompt`, json({ text })),
   /** ACP's session/cancel: stop the session's current turn. The session goes on. */
   cancelSession: (id) => request(`/api/sessions/${encodeURIComponent(id)}/cancel`, json({})),
   /** One agent's sessions in the month - the same rows Home lists, for its Activity tab. */
@@ -291,6 +289,17 @@ export const api = {
    * placeholder until `rotateIngest`.
    */
   ingest: () => request("/api/ingest"),
+
+  // The git hosts a person connects with their own token, so the pull
+  // requests they open are followed to a merge and Performance counts them
+  // (server/git-hosts/). Never carries a token back: `gitHosts` answers the
+  // account each is connected as, and nothing else.
+  gitHosts: () => request("/api/git-hosts"),
+  /** `{ token }`, and `{ username, token }` for Bitbucket, which signs in with both halves. */
+  connectGitHost: (host, body) => request(`/api/git-hosts/${encodeURIComponent(host)}`, json(body)),
+  disconnectGitHost: (host) => request(`/api/git-hosts/${encodeURIComponent(host)}`, { method: "DELETE" }),
+  /** Ask the host now rather than at the next tick - the Check now button. */
+  syncGitHost: (host) => request(`/api/git-hosts/${encodeURIComponent(host)}/sync`, { method: "POST" }),
   rotateIngest: () => request("/api/ingest/rotate", { method: "POST" }),
   /**
    * The LiteLLM connector: whether this installation has a proxy, and how
@@ -435,34 +444,6 @@ export const api = {
   deleteSecret: (name) =>
     request(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
 
-
-  /** What has been said in a repo - people and agents both. Home's talk box reads it. */
-  repoChat: (id, limit = 60) =>
-    request(`/api/repos/${encodeURIComponent(id)}/chat?limit=${limit}`),
-
-  /**
-   * The private line between this person and one of their agents. Not the
-   * room: nobody in a repo sees it, and the agent is told so.
-   */
-  agentChat: (id, limit = 60) =>
-    request(`/api/agents/${encodeURIComponent(id)}/chat?limit=${limit}`),
-  // `about` is optional, as it is for `say`: a line typed beside a task on
-  // the Home page names the task.
-  tellAgent: (id, text, about) =>
-    request(`/api/agents/${encodeURIComponent(id)}/chat`, json({ text, about })),
-
-  /** What every repo's machines are doing, as one word each. */
-
-  /**
-   * Say something in a repo's chat.
-   *
-   * Everybody and everything in the room reads it, and an agent it is for is
-   * woken by it. `about` is optional: a remark left from a card in the
-   * console names what it is about, and a line typed into the room is about
-   * the room.
-   */
-  say: (id, text, about) =>
-    request(`/api/repos/${encodeURIComponent(id)}/feedback`, json({ text, about })),
   // Open to people who are not signed in: the About page is the one page a
   // stranger reads, and making them make an account before they can say what
   // is wrong with the product defeats the point of asking.
@@ -474,9 +455,6 @@ export const api = {
   sendFeedback: (message, replyTo = "") => request("/api/feedback", json({ message, replyTo })),
 };
 
-/**
- * POST to the chat endpoint and yield each NDJSON event as it arrives.
- */
 /**
  * A file the server means the browser to save.
  *
@@ -509,10 +487,6 @@ export const exportRows = (what, format, range = "7d") =>
     `/api/export/${what}.${format}?range=${encodeURIComponent(range)}&where=${encodeURIComponent(whereParam())}`,
     `codervibes-${what}-${range}.${format}`,
   );
-
-export function streamChat(body, signal) {
-  return streamNdjson("/api/chat", body, signal);
-}
 
 /** POST JSON, then yield each newline-delimited JSON event from the response. */
 export async function* streamNdjson(url, body, signal) {

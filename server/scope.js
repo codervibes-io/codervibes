@@ -188,8 +188,8 @@ export function scopeFor(deps = {}) {
      * The repo's workspace is read off the repo rather than stamped on the
      * record, so a repo moved to another workspace takes its history with it.
      */
-    whereOf: (req, { repoId = null, repository = null, owner = null }) =>
-      sessionWhere.whereIn(scope.scopeOf(req), { repoId, repository, owner }),
+    whereOf: (req, { repoId = null, repository = null, host = "github", owner = null }) =>
+      sessionWhere.whereIn(scope.scopeOf(req), { repoId, repository, host, owner }),
 
     /** What this request asked to see, from `?where=` - `workspace` alone unless it said. */
     wheresOf: (req) => sessionWhere.parse(req.query?.where),
@@ -198,6 +198,9 @@ export function scopeFor(deps = {}) {
     placeOf: (session) => ({
       repoId: session.repoId ?? null,
       repository: session.repo?.fullName ?? null,
+      // Which git host the checkout's remote was on. Absent on every
+      // session recorded before there was a choice, and those are GitHub's.
+      host: session.repo?.host ?? "github",
       owner: session.owner ?? null,
     }),
 

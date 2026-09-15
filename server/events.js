@@ -68,7 +68,7 @@ const idFor = (at, n) => `${String(at).padStart(14, "0")}-${String(n).padStart(6
  * from hot paths and from inside store writes, and a consumer that fails is
  * its own problem.
  *
- * @param {string} type what kind of thing - "chat.line", "machine.status", "repo.saved"
+ * @param {string} type what kind of thing - "agent.activity", "repo.saved"
  * @param {{ repoId?: string|null, agentId?: string|null, owner?: string|null, users?: string[] }} subject
  *   who it is about, which is who may hear it. Empty means everybody.
  * @param {object|null} data whatever a consumer needs to act without re-reading

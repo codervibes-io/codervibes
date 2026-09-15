@@ -55,8 +55,8 @@ test("every pair being taken is a numbered name, not an empty one or a hang", ()
 });
 
 test("the words stay safe to print beside a colleague's name", () => {
-  // The name lands in a pull request, in the room's chat and on the
-  // Executors list, where it sits next to the people who work here. So:
+  // The name lands in a pull request, on a task and on the Executors
+  // list, where it sits next to the people who work here. So:
   // lowercase single words only, no proper nouns, and nothing that reads as
   // a remark about whoever is standing near it.
   for (const word of [...WORDS.adjectives, ...WORDS.animals]) {

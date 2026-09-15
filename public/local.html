@@ -41,7 +41,7 @@
          pitch and the blog, and this edition has none of the three. The
          console is what the page is, from the first paint. -->
     <main class="console" id="console">
-      <!-- Four pages, and no workspace above them: there is nobody to be in
+      <!-- Five pages, and no workspace above them: there is nobody to be in
            a room with, so there is nothing to switch between. -->
       <aside class="app-sidebar" id="app-sidebar">
         <nav class="sidebar-nav" aria-label="Pages">
@@ -67,6 +67,13 @@
           <a class="sidebar-link" href="/tools" data-page="tools">
             <span class="sidebar-icon" aria-hidden="true">⚒</span>
             <span>Tools</span>
+          </a>
+          <!-- The git host the work is on, connected with a token of the
+               person's own: what makes "merged" a fact this edition can
+               know rather than one it has to leave out. -->
+          <a class="sidebar-link" href="/connectors" data-page="connectors">
+            <span class="sidebar-icon" aria-hidden="true">⇄</span>
+            <span>Connectors</span>
           </a>
           <!-- One session (`/activity/<id>`) has no link here: it is what a
                search result and a machine's list of work open onto, not a

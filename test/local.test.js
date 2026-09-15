@@ -15,7 +15,7 @@
 // the row on the page.
 //
 // The source-reading half at the end holds what an HTTP test cannot see:
-// that the column is four pages, that the addresses the client knows are the
+// that the column is five pages, that the addresses the client knows are the
 // addresses the server serves, and that neither file mentions a page this
 // edition does not have.
 import test from "node:test";
@@ -26,6 +26,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { startFakeGitLab } from "./fake-gitlab.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (...parts) => fs.readFile(path.join(root, ...parts), "utf8");
@@ -44,6 +46,8 @@ function freePort() {
 let server;
 let base;
 let dataDir;
+/** A GitLab for the Connectors page to connect to - see fake-gitlab.js. */
+let gitlab;
 
 /**
  * The environment a person starts this in: theirs, with everything this
@@ -99,11 +103,18 @@ async function eventually(what, check, { within = 20_000 } = {}) {
 
 test.before(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "codervibes-local-"));
+  gitlab = await startFakeGitLab();
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   server = spawn(process.execPath, ["server/local.js"], {
     cwd: root,
-    env: bare({ PORT: String(port), CODERVIBES_DATA_DIR: dataDir }),
+    env: bare({
+      PORT: String(port),
+      CODERVIBES_DATA_DIR: dataDir,
+      // The one thing this edition reaches the network for, pointed at a
+      // fake: the git host a person connects on the Connectors page.
+      CODERVIBES_GITLAB_API: process.env.CODERVIBES_GITLAB_API,
+    }),
     stdio: "ignore",
   });
   const deadline = Date.now() + 20_000;
@@ -120,6 +131,7 @@ test.before(async () => {
 
 test.after(async () => {
   server?.kill("SIGTERM");
+  gitlab?.server.close();
   await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
@@ -151,12 +163,18 @@ test("the console opens with no cookie, no token and nobody signed in", async ()
   assert.equal(config.body.auth.mode, "none", "what the console configures sign-in from says there is none");
 });
 
-test("the setup line carries no token, asks for no header and configures no MCP server", async () => {
+test("the setup line carries no token and asks for no header, and still wires this app's tools into every harness", async () => {
   const script = (await call("/setup.sh")).body;
   assert.doesNotMatch(script, /cvh1/, "a token this installation cannot issue must not be in the line");
   assert.doesNotMatch(script, /Authorization/, "nothing here authenticates, so nothing sends a header");
-  assert.doesNotMatch(script, /\/mcp/, "there are no connected services to hand an agent");
   assert.doesNotMatch(script, /OTEL_EXPORTER_OTLP_HEADERS/);
+  // The MCP server is written in all the same: what it offers here is the
+  // three tools of mcp-local.js, which need no connected service and no
+  // credential - see the test below that they answer.
+  assert.match(script, new RegExp(`MCP_URL="${base}/mcp"`));
+  for (const tool of ["discover", "open_session", "name_session"]) {
+    assert.match(script, new RegExp(tool), `the line says nothing about ${tool}`);
+  }
 
   // What it still does, which is the whole of what it is for: every hook
   // that reports a session as it happens.
@@ -319,7 +337,7 @@ test("three machines are seated, the fourth is told why not, and forgetting one 
 });
 
 test("the addresses this edition serves are its own, and the ones it does not are gone", async () => {
-  for (const url of ["/", "/executors", "/executors/setup%3Alaptop%3AAdas-MBP", "/performance", "/performance/harnesses", "/search", "/tools", "/tools/run_command"]) {
+  for (const url of ["/", "/executors", "/executors/setup%3Alaptop%3AAdas-MBP", "/performance", "/performance/harnesses", "/search", "/tools", "/tools/run_command", "/connectors"]) {
     const page = await call(url);
     assert.equal(page.status, 200, url);
     assert.match(page.body, /local\.js/, `${url} is the console`);
@@ -329,7 +347,7 @@ test("the addresses this edition serves are its own, and the ones it does not ar
 
   // And the pages that belong to the hosted product are not here at all -
   // not a stub, not a redirect to something that half works.
-  for (const url of ["/connectors", "/secrets", "/workspace", "/account", "/workflows", "/activity", "/sign-in", "/how-it-works", "/blog"]) {
+  for (const url of ["/secrets", "/workspace", "/account", "/workflows", "/activity", "/sign-in", "/how-it-works", "/blog"]) {
     assert.equal((await call(url)).status, 404, `${url} should not be served by the local edition`);
   }
 
@@ -337,6 +355,95 @@ test("the addresses this edition serves are its own, and the ones it does not ar
   for (const asset of ["/local.js", "/console.css", "/styles.css", "/shell.js"]) {
     assert.equal((await call(asset)).status, 200, asset);
   }
+});
+
+// ----------------------------------------------- the git host, connected
+
+test("a git host connected with a token makes a merge a fact this edition knows", async () => {
+  // Nothing is connected, and every host is offered - with no token in the
+  // answer, which is the one thing that must be true of this route however
+  // it is asked.
+  const before = await call("/api/git-hosts");
+  assert.equal(before.status, 200);
+  assert.deepEqual(before.body.hosts.map((row) => row.host), ["github", "gitlab", "bitbucket"]);
+  assert.ok(before.body.hosts.every((row) => row.connected === false && row.account === null));
+  assert.equal(JSON.stringify(before.body).includes(gitlab.state.token), false);
+
+  // A token the host refuses comes back as the host's own sentence, on the
+  // request that pasted it - not a 500, and nothing kept.
+  const wrong = await post("/api/git-hosts/gitlab", { token: "glpat-not-the-one" });
+  assert.equal(wrong.status, 401);
+  assert.match(wrong.body.error, /GitLab did not accept that token/);
+  assert.match(wrong.body.error, /read_api/, "and says what the token has to be able to do");
+  assert.equal((await call("/api/git-hosts")).body.hosts.find((row) => row.host === "gitlab").connected, false);
+
+  // One that cannot be a GitLab token at all never reaches GitLab.
+  assert.equal((await post("/api/git-hosts/gitlab", { token: "ghp_wrong-host" })).status, 400);
+  // And a host this app does not know is a 404.
+  assert.equal((await post("/api/git-hosts/sourcehut", { token: "x" })).status, 404);
+
+  // A session on this machine, in a checkout of the GitLab project, on a
+  // branch. Nothing says a merge request was ever opened: the branch is the
+  // whole of the link.
+  const hooks = await post("/api/harness/session", {
+    events: [
+      { event: "start", session: "gl-1", repo: "git@gitlab.com:ada/platform/engine.git", branch: "feature/x", machine: "Adas-MBP", platform: "" },
+      { event: "prompt", session: "gl-1", input: { session_id: "gl-1", prompt: "Make the clock idempotent" } },
+      { event: "end", session: "gl-1", input: { session_id: "gl-1", reason: "exit" } },
+    ],
+  });
+  assert.equal(hooks.status, 200, JSON.stringify(hooks.body));
+  const glSession = hooks.body.noted[0].session;
+  assert.equal(hooks.body.noted[0].repo, "ada/platform/engine", "a GitLab remote used to name no repository at all");
+  assert.equal(hooks.body.noted[0].host, "gitlab");
+
+  // GitLab holds a merged merge request from that branch.
+  gitlab.state.add({
+    iid: 12,
+    title: "Make the clock idempotent",
+    state: "merged",
+    source_branch: "feature/x",
+    merged_at: "2026-09-10T09:00:00.000Z",
+    updated_at: "2026-09-10T09:00:00.000Z",
+  });
+
+  // The token, pasted. The connection says who it is, asked of GitLab
+  // rather than typed in.
+  const connected = await post("/api/git-hosts/gitlab", { token: gitlab.state.token });
+  assert.equal(connected.status, 200, JSON.stringify(connected.body));
+  assert.equal(connected.body.account, "ada");
+  const listed = (await call("/api/git-hosts")).body.hosts.find((row) => row.host === "gitlab");
+  assert.equal(listed.connected, true);
+  assert.equal(listed.account, "ada");
+  assert.equal(listed.at != null, true);
+
+  // Ask now rather than in five minutes - the Check now button's route.
+  const swept = await post("/api/git-hosts/gitlab/sync", {});
+  assert.equal(swept.status, 200, JSON.stringify(swept.body));
+  assert.deepEqual(swept.body.failed, []);
+
+  // And the whole point of the page: the session's work is merged, on the
+  // page that counts merges.
+  const detail = await call(`/api/sessions/${glSession}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.session.outcome, "merged");
+  assert.equal(detail.body.session.pulls[0].host, "gitlab");
+  assert.equal(detail.body.session.pulls[0].number, 12);
+
+  // And on the page that ranks the work: a merged merge request is a
+  // finished piece of work, which is what Performance counts (see
+  // server/performance.js - a task, not a pull request).
+  const ranking = await call("/api/performance?range=7d&by=sessions");
+  const row = ranking.body.rows.find((entry) => entry.key === glSession);
+  assert.ok(row, "the session is not on the ranking at all");
+  assert.equal(row.tasks, 1, "the merge request is the piece of work this session took on");
+  assert.equal(row.finished, 1, "and it finished, which this edition could not have known without the token");
+
+  // Disconnecting stops the asking and leaves what was folded alone.
+  assert.equal((await call("/api/git-hosts/gitlab", { method: "DELETE" })).status, 200);
+  assert.equal((await call("/api/git-hosts/gitlab", { method: "DELETE" })).status, 404, "twice is not a second forget");
+  assert.equal((await post("/api/git-hosts/gitlab/sync", {})).status, 404, "and there is nothing left to ask");
+  assert.equal((await call(`/api/sessions/${glSession}`)).body.session.outcome, "merged", "the record is what happened, and stays");
 });
 
 test("it refuses to start on an address other machines can reach", async () => {
@@ -369,11 +476,12 @@ test("it refuses to start on an address other machines can reach", async () => {
 const html = await read("public", "local.html");
 const entry = await read("public", "local.js");
 const serverEntry = await read("server", "local.js");
+const gitHostsPage = await read("public", "page-git-hosts.js");
 const css = await read("public", "console.css");
 
-const COLUMN = ["executors", "performance", "search", "tools"];
+const COLUMN = ["executors", "performance", "search", "tools", "connectors"];
 
-test("the column is four pages, in the order the edition puts them in", () => {
+test("the column is five pages, in the order the edition puts them in", () => {
   const order = [...html.matchAll(/data-page="([a-z]+)"/g)].map((match) => match[1]);
   assert.deepEqual(order, COLUMN, "the column is a different set or a different order");
   // One session is an address with no link, so it is in the page set and
@@ -384,7 +492,7 @@ test("the column is four pages, in the order the edition puts them in", () => {
 
 test("every page the client knows is a page the server serves, and the reverse", () => {
   const known = [...entry.matchAll(/^  ([a-z]+): \{ path: "(\/[a-z]+)"/gm)].map((match) => match[2]);
-  assert.deepEqual(known, ["/executors", "/performance", "/search", "/tools", "/activity"]);
+  assert.deepEqual(known, ["/executors", "/performance", "/search", "/tools", "/connectors", "/activity"]);
   // The server's own list, as it hands them to `consolePage`. Each page's
   // bare address and whatever it takes under it.
   const routes = [...serverEntry.matchAll(/^  "(\/[^"]*)",$/gm)].map((match) => match[1]);
@@ -397,6 +505,7 @@ test("every page the client knows is a page the server serves, and the reverse",
     "/search",
     "/tools",
     "/tools/:toolName",
+    "/connectors",
     "/activity/:sessionId",
   ]);
   for (const page of known) {
@@ -412,7 +521,9 @@ test("neither file links to a page, a panel or a sign-in this edition does not h
   // an href, a data-page, a call - rather than on the words, so that a
   // comment saying which of these the edition leaves out is still allowed to
   // name them.
-  for (const page of ["connectors", "secrets", "workspace", "account", "workflows", "sign-in", "how-it-works", "blog"]) {
+  // Connectors is not on this list any more: this edition has one, and it
+  // is its own page (page-git-hosts.js) rather than the full console's.
+  for (const page of ["secrets", "workspace", "account", "workflows", "sign-in", "how-it-works", "blog"]) {
     assert.ok(!html.includes(`href="/${page}"`), `local.html links to /${page}`);
     assert.ok(!html.includes(`data-page="${page}"`), `local.html has a column entry for ${page}`);
     assert.ok(!entry.includes(`pathFor("${page}"`), `local.js navigates to ${page}`);
@@ -426,9 +537,34 @@ test("neither file links to a page, a panel or a sign-in this edition does not h
   for (const call of ["initAuth(", "signOutFirebase(", "api.signOut(", "api.connectors(", "api.secrets("]) {
     assert.ok(!entry.includes(call), `local.js calls ${call}`);
   }
-  // And the reads a refresh does are the two there are: no connectors and
-  // no secrets read, which would 404 on every tick.
+  // And the reads a refresh does are the two there are: no secrets read,
+  // which would 404 on every tick, and the git hosts read by the page that
+  // shows them rather than by every refresh.
   assert.match(entry, /readAlways: \(\) => \[api\.session\(\), api\.executors\(\)\]/);
+  assert.ok(entry.includes("api.gitHosts(") === false, "the entry reads the hosts through its page module, not itself");
+  assert.match(gitHostsPage, /api\s*\n?\s*\.gitHosts\(\)/, "which is where the read is");
+});
+
+test("the Connectors page keeps its form on a phone, where every other cell is dropped", () => {
+  // The durable half of "checked at both widths". A row keeps exactly one
+  // cell below 860px (console.css), and on this page that cell is the form
+  // - the only control it has. Three pages once shipped with their whole
+  // contents unreachable at 390px and it read as the feature not working,
+  // so what holds this is an assertion over the source rather than a
+  // screenshot taken once.
+  assert.match(gitHostsPage, /keep: true/, "the form's cell is the one a phone keeps");
+  assert.ok(
+    !/statusCell\(/.test(gitHostsPage),
+    "the status is a chip in the name, not a second kept cell - a phone shows only the first",
+  );
+  assert.match(gitHostsPage, /git-hosts-table/, "and the table says which it is, so its columns can differ");
+
+  // The two rules that makes true, both in the one stylesheet and both at
+  // the one breakpoint this app has.
+  const phone = css.slice(css.indexOf("@media (max-width: 860px)"));
+  assert.match(css.slice(0, css.indexOf("@media (max-width: 860px)")), /\.git-hosts-table \{/, "the desktop columns come before the phone block, so the phone block still wins");
+  assert.match(phone, /\.git-hosts-table \{[^}]*grid-template-columns: minmax\(0, 1fr\)/, "and on a phone the row stacks: the name on one line, the form on the next");
+  assert.match(css, /\.git-host-form,\n\.git-host-actions \{[\s\S]*?flex-wrap: wrap;/, "the form wraps here and nowhere else");
 });
 
 test("the local console is the same grid as the full one, so the phone rules reach it", () => {

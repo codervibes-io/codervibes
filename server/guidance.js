@@ -5,16 +5,15 @@
 // the same session if one was told what to do once and the other eleven
 // times, and the second is the one whose agent needs looking at. So beside
 // the outcome the session keeps counts of the steering it took, and this is
-// where those counts come from. Counts only: what was said is the chat's
-// business, and a session record never holds a line of it.
+// where those counts come from. Counts only: a session record never holds a
+// word of what was said.
 //
 // The signals, and where each is caught:
 //
-//   humanLines   a person said something to the agent - a room line that
-//                addresses it (by name, @agents, @all), or a line on its
-//                private line, or a turn typed to the assistant. Caught
-//                where every such line already rings the wake bell, so
-//                nothing is counted that the agent was not going to see.
+//   humanLines   a person said something to the agent - a turn typed to the
+//                assistant, or a prompt their own harness reported. Caught
+//                on the road it came in on, so nothing is counted that the
+//                agent was not going to see.
 //   followUps    the same person came back: a task moved to this agent after
 //                somebody else had it, or the assistant asked a second
 //                thing in a conversation that already had a first.
@@ -59,16 +58,12 @@
 //
 // Each lands on the actor's *live* session, and only on one: a session is
 // the unit the counts are for, and an agent with no live session was not
-// being steered by that line - it was being woken by it, and the session
-// that wake produces starts clean. What it does carry from the wake is what
-// set it off: the same watcher, on the same bell, hands the line or the
-// task to sessions.js `setOff` for an agent with no live session, and the
-// session opened when the machine comes up says "set off by Ada's line" or
-// "by a task from Grid". Ids and who, not words - see sessions.js.
+// being steered - it was being set off, and the session that produces
+// starts clean. What it does carry is what set it off: the watcher on the
+// wake bell hands the task to sessions.js `setOff` for an agent with no
+// live session, and the session opened when the machine comes up says "set
+// off by a task from Grid". Ids and who, not words - see sessions.js.
 import { onRing } from "./wake.js";
-// The tag rule alone (agent-mentions.js), not the chat it is read in:
-// counting a line is not reading one, and this file is counting.
-import { addressed } from "./agent-mentions.js";
 import * as sessionLog from "./sessions.js";
 import * as sessionEvents from "./session-events.js";
 
@@ -80,17 +75,6 @@ function onLive(actorId, signal) {
   return live;
 }
 
-/** A line as a trigger: which line, where it was said, and who said it. */
-export const lineTrigger = (key, message) => ({
-  kind: "line",
-  id: message?.id ?? null,
-  key,
-  by: message?.agent
-    ? { kind: "agent", id: null, name: message.name ?? null }
-    : { kind: "person", id: message?.user ?? null, name: message?.name ?? null },
-  at: Number(message?.at) || Date.now(),
-});
-
 /** A task as a trigger: which task, in which repo, and the agent that sent it. */
 export const taskTrigger = (task) => ({
   kind: "task",
@@ -99,34 +83,6 @@ export const taskTrigger = (task) => ({
   by: task?.from ? { kind: "agent", id: task.from.id ?? null, name: task.from.name ?? null } : null,
   at: task?.createdAt ? Date.parse(task.createdAt) || Date.now() : Date.now(),
 });
-
-/**
- * A line was said. `key` is what rang: a repo id for a room line, or
- * `agent:<id>` for the private line. `agentsIn(repoId)` says who is in
- * a room; it is passed in rather than imported so that this module needs
- * nothing of the registry - it is counting, not deciding.
- *
- * @returns {string[]} the ids of the agents whose sessions counted the line
- */
-export function noteLine(key, message, { agentsIn }) {
-  if (!message) return [];
-  // An agent's line steers nobody, but it can set somebody off - "@ada,
-  // take the front end" from the agent that has the back end.
-  const steer = (agentId) => (message.agent ? null : onLive(agentId, "humanLines"));
-  if (key.startsWith("agent:")) {
-    const agentId = key.slice("agent:".length);
-    if (steer(agentId)) return [agentId];
-    if (!sessionLog.liveFor(agentId)) sessionLog.setOff(agentId, lineTrigger(key, message));
-    return [];
-  }
-  const counted = [];
-  for (const agent of agentsIn(key) ?? []) {
-    if (addressed(message, agent.name) !== "addressed") continue;
-    if (steer(agent.id)) counted.push(agent.id);
-    else if (!sessionLog.liveFor(agent.id)) sessionLog.setOff(agent.id, lineTrigger(key, message));
-  }
-  return counted;
-}
 
 /** A task was sent to an agent. Not steering - a task is the work itself - but the thing that sets a sleeping agent off. */
 export function noteTask(key, task) {
@@ -170,11 +126,9 @@ export function asked(sessionId) {
  * the figure that says an agent finished in twelve minutes of work spread
  * over an afternoon.
  *
- * `line` is false when the words also travel by a road that counts the line
- * for itself: a console prompt to an agent in a room is posted as a room
- * line, the wake bell carries it, and `noteLine` above counts it there. The
- * turn, the follow-up and the clock are still this call's - only the tally
- * of lines would be doubled.
+ * `line` is false for a caller whose words are counted somewhere else: the
+ * turn, the follow-up and the clock are still this call's, and only the
+ * tally of lines would be doubled.
  *
  * @param {string} sessionId
  * @param {{ at?: number, turn?: object|null, line?: boolean }} [opts]
@@ -211,16 +165,15 @@ export function cancelled(sessionId, { at = Date.now(), turn = undefined } = {})
 }
 
 /**
- * Listen at the bell for the lines. Returns what `onRing` returns, so a
- * test can stop listening; the server never does.
+ * Listen at the bell for what sets an agent off. Returns what `onRing`
+ * returns, so a test can stop listening; the server never does.
  */
-export function watchGuidance({ agentsIn }) {
+export function watchGuidance() {
   return onRing((key, payload) => {
     try {
       if (payload?.task) noteTask(key, payload.task);
-      else noteLine(key, payload?.message, { agentsIn });
     } catch {
-      // Counting is not a reason for the line not to reach anybody.
+      // Counting is not a reason for the task not to reach anybody.
     }
   });
 }

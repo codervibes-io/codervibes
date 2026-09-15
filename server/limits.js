@@ -83,11 +83,6 @@ export const LIMITS = {
   maxMembersPerWorkspace: int("CODERVIBES_MAX_WORKSPACE_MEMBERS", 50),
   maxWorkspacesPerUser: int("CODERVIBES_MAX_WORKSPACES_PER_USER", 10),
 
-  // ---- repo chat. Cheap - a websocket frame and one small write - so
-  // this is about a stuck client hammering the room, not about cost.
-  /** Chat messages one person may send to a repo per hour. */
-  maxChatMessagesPerHour: int("CODERVIBES_MAX_CHAT_PER_HOUR", 600),
-
   // ---- feedback. Lands in one person's inbox, and is open to people who are
   // not signed in - so the ceiling is about it not becoming a mailer.
   /** Pieces of feedback one person may send per hour. */
@@ -153,7 +148,7 @@ export class ConcurrencyGate {
 /**
  * A sliding-window counter per key. Deliberately in memory: this is a cost
  * guardrail, not a security boundary, and a shared counter would mean a round
- * trip to DynamoDB on the hot path of every chat message.
+ * trip to DynamoDB on the hot path of every call it guards.
  */
 export class RateLimiter {
   constructor(limit, windowMs, what) {

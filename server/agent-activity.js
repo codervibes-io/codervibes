@@ -4,7 +4,7 @@
 // on somebody's laptop, a cron job on a box nobody has looked at in a month.
 // The person whose repos it is working in cannot see any of it. Until now
 // the only trace it left here was a chip in the presence row of whichever
-// repo it happened to be in, and whatever it chose to say in chat.
+// repo it happened to be in.
 //
 // That was survivable while an agent lived in one repo. It is not now: an
 // agent can be making repos, booting sandboxes and deploying services
@@ -48,11 +48,9 @@ const THINKING_MAX_MS = 10 * 60_000;
  * makes two `write_file` lines tell you different things.
  */
 const VERBS = {
-  // In the room. The file and command tools used to be most of this table;
+  // In the repo. The file and command tools used to be most of this table;
   // they ran on a machine of ours, and there is none - an agent's reads and
   // writes happen on its own disk, where this app never sees them.
-  send_message: (input) => `Saying: ${input.text}`,
-  read_messages: () => "Catching up on the chat",
   repo_info: () => "Getting its bearings",
   platform_guide: () => "Reading the guide",
   list_repos: () => "Looking at its repos",

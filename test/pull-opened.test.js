@@ -46,7 +46,7 @@ test("a command that creates a pull request and prints its URL is that pull requ
   // gh prints the URL alone on stdout, with its chatter on stderr.
   assert.deepEqual(
     pullOpenedBy('gh pr create --title "A clock" --body "..."', { stdout: `${url(12)}\n`, stderr: "Creating pull request for feature/clock into main in ada/engine\n" }),
-    { repo: "ada/engine", number: 12, url: url(12) },
+    { host: "github", repo: "ada/engine", number: 12, url: url(12) },
   );
   // The command may be one of several on a line, and the result a plain string or content blocks.
   assert.equal(pullOpenedBy("git push -u origin feature/clock && gh pr create --fill", url(13)).number, 13);
@@ -57,6 +57,23 @@ test("a command that creates a pull request and prints its URL is that pull requ
   assert.equal(pullOpenedBy("gh pr view 12 --json url", { stdout: url(12) }), null);
   assert.equal(pullOpenedBy("gh pr list", { stdout: `${url(3)}\n${url(4)}` }), null);
   assert.equal(pullOpenedBy("gh pr checkout 12", { stdout: url(12) }), null);
+
+  // GitLab, through its own CLI, and a project several groups deep - the
+  // whole path is the project's name.
+  assert.deepEqual(
+    pullOpenedBy("glab mr create --fill", { stdout: "https://gitlab.com/ada/platform/engine/-/merge_requests/7\n" }),
+    { host: "gitlab", repo: "ada/platform/engine", number: 7, url: "https://gitlab.com/ada/platform/engine/-/merge_requests/7" },
+  );
+  assert.equal(pullOpenedBy("glab mr list", { stdout: "https://gitlab.com/ada/engine/-/merge_requests/7" }), null, "listing is not opening");
+
+  // Bitbucket has no command to recognise, so the URL alone is the reading:
+  // it is what `git push` prints when the server offers a pull request.
+  assert.deepEqual(
+    pullOpenedBy("git push -u origin feature/clock", {
+      stdout: "remote: Create pull request for feature/clock:\nremote:   https://bitbucket.org/ada/engine/pull-requests/3\n",
+    }),
+    { host: "bitbucket", repo: "ada/engine", number: 3, url: "https://bitbucket.org/ada/engine/pull-requests/3" },
+  );
   assert.equal(pullOpenedBy("echo 'gh pr create' > notes.md", { stdout: "" }), null, "a create that printed no URL opened nothing");
   // A create that failed printed no URL.
   assert.equal(pullOpenedBy("gh pr create -f", { stdout: "", stderr: "pull request create failed: GraphQL: No commits between main and feature/clock" }), null);

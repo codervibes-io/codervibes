@@ -162,7 +162,7 @@ function shape(kind, body = {}) {
  */
 export function toolKindOf(tool) {
   const name = String(tool ?? "").toLowerCase().replace(/^mcp__[a-z0-9_-]+__/, "");
-  if (/^(read|cat|view|list|ls|glob|notebookread|recent_changes|my_tasks|read_messages|repo_info|platform_guide|list_)/.test(name)) return "read";
+  if (/^(read|cat|view|list|ls|glob|notebookread|recent_changes|my_tasks|repo_info|platform_guide|list_)/.test(name)) return "read";
   if (/^(write|edit|multiedit|notebookedit|patch|apply|create_file)/.test(name)) return "edit";
   if (/^(delete|remove|rm|unlink|destroy)/.test(name)) return "delete";
   if (/^(move|rename|mv)/.test(name)) return "move";

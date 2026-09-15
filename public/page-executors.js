@@ -9,7 +9,7 @@
 //
 // **Nothing here reaches console-external.js or console-agent.js.** Those
 // two are the whole of the rest of the console by transitive import -
-// console-external.js pulls console-home.js, which pulls the chat and the
+// console-external.js pulls console-home.js, which pulls the cards and the
 // tasks - and a page module that dragged them in would make the slim shell
 // a fiction. What they know is handed in instead: `describeExternal` says
 // what a vendor's agent's status and location are, and `detailFor` draws
@@ -413,7 +413,7 @@ export function executorsPage(
       return;
     }
     // A harness on a laptop reporting for nobody: what it is, how it
-    // connects, and what its sessions came to. No chat and no tasks - it
+    // connects, and what its sessions came to. No tasks - it
     // is a process somebody runs, not an agent this app can reach.
     if (executor.kind === "harness") {
       pane.append(harnessDetail(executor, { readOnly, onChanged: refresh }));

@@ -1,21 +1,26 @@
-// The local console: four pages, one document, and nobody to sign in as.
+// The local console: five pages, one document, and nobody to sign in as.
 //
 // This is console.js's job - which pages there are, what a page draws, what
 // a refresh reads - over a quarter of its page set. Everything it does not
 // do is the point: no `initAuth` and no gate, because the server answers
-// `auth: { mode: "none" }` and the page simply opens; no connectors and no
-// secrets reads, because this edition has neither; no workspace switcher,
-// because there is one person; no Activity page, because a list of
-// everybody's work is a list of one person's own sessions, which Search is
-// already over.
+// `auth: { mode: "none" }` and the page simply opens; no secrets read,
+// because this edition has none; no workspace switcher, because there is one
+// person; no Activity page, because a list of everybody's work is a list of
+// one person's own sessions, which Search is already over.
+//
+// Connectors is this console's own rather than the full one's: the page here
+// is three git hosts and a token box (page-git-hosts.js), where the hosted
+// product's is every service an agent can be lent. Same address, because it
+// is the same question - what is this installation connected to - and a
+// different page, because the answers have nothing in common.
 //
 // The mechanics are shell.js and the page modules, unchanged and unforked -
 // the address handling, the collapse of a burst of events into one read, the
 // reconnecting stream, the four pages and the session page are the same code
 // the full console hangs in its own shell. That is the whole reason this
 // file is short, and it is why it must stay a composition: a helper reached
-// for across the line into console.js drags the chat, the tasks and the
-// public pages in behind it (test/console.test.js holds this).
+// for across the line into console.js drags the tasks and the public pages
+// in behind it (test/console.test.js holds this).
 //
 // One address is not in the column: `/activity/<session>` is one session,
 // which a search result and a machine's row open onto. `back` from it goes
@@ -28,6 +33,7 @@ import { executorsPage } from "./page-executors.js";
 import { performancePage } from "./page-performance.js";
 import { searchPage } from "./page-search.js";
 import { toolsPage } from "./page-tools.js";
+import { gitHostsPage } from "./page-git-hosts.js";
 import { sessionPage } from "./page-session.js";
 import { NO_FILTERS } from "./console-performance.js";
 import { oneWhere } from "./console-where.js";
@@ -57,6 +63,9 @@ const PAGES = {
   performance: { path: "/performance", kind: "ranking", title: "Performance" },
   search: { path: "/search", kind: "discovery", title: "Search" },
   tools: { path: "/tools", kind: "tool", title: "Tools" },
+  // The git host a person's pull requests live on, connected with their own
+  // token. One row per host and no thing to open, so no `kind`.
+  connectors: { path: "/connectors", kind: null, title: "Connectors" },
   // One session. Named `activity` because that is the address the full
   // console gives a session and the page module keys off (page-session.js
   // `wants`), and because a link to a session copied out of one console
@@ -72,9 +81,9 @@ const DEFAULT_PAGE = "executors";
 /**
  * Everything this page knows.
  *
- * The fields the five page modules read, and no others - a state with a
- * `connectors` or a `workspaces` in it would be a promise this edition
- * cannot keep. The shapes are console.js's, because the page modules are.
+ * The fields the six page modules read, and no others - a state with a
+ * `workspaces` in it would be a promise this edition cannot keep. The
+ * shapes are console.js's, because the page modules are.
  */
 const state = {
   session: null,
@@ -91,6 +100,9 @@ const state = {
     friction: null, frictionFailed: null, frictionState: { by: "repo" },
   },
   tools: { range: "7d", data: null, failed: null },
+  // The three git hosts and which of them is connected. Null until the
+  // Connectors page has been opened; `{hosts, failed}` after.
+  gitHosts: null,
   toolDetail: { id: null, range: "7d", data: null, failed: null },
   search: {
     asked: null, data: null, failed: null, kind: "all", provider: null, range: "all",
@@ -125,14 +137,18 @@ const shell = createShell({
     () => search.read(),
     () => tools.readTool(),
     () => oneSession.read(),
+    () => gitHosts.read(),
   ],
   // What every refresh reads whatever page is open. Two, against the full
-  // console's four: there are no connectors and no secrets to read.
+  // console's four: there are no secrets to read, and the git hosts are
+  // read by the page that shows them rather than on every tick - they can
+  // only change on that page.
   readAlways: () => [api.session(), api.executors()],
   rereads: [
     () => performance.reread(),
     () => search.reread(),
     () => oneSession.reread(),
+    () => gitHosts.reread(),
   ],
   apply: ([session, executorsAnswer]) => {
     state.session = session;
@@ -175,9 +191,10 @@ const executors = executorsPage(pageCtx, {
 const performance = performancePage(pageCtx);
 const search = searchPage(pageCtx);
 const tools = toolsPage(pageCtx);
-// No `talk`: the box you type into steers an agent this app runs, and this
-// app runs none. A session page without one is still a session page.
 const oneSession = sessionPage(pageCtx);
+// The git hosts: three rows, a token box each, and nothing an agent is lent
+// - see page-git-hosts.js.
+const gitHosts = gitHostsPage(pageCtx);
 
 /** Draw whatever the address says: a page's list, or one thing on it. */
 function drawPage() {
@@ -188,6 +205,7 @@ function drawPage() {
   if (state.page === "performance") return pane.append(performance.view());
   if (state.page === "search") return search.draw(pane);
   if (state.page === "tools") return tools.draw(pane);
+  if (state.page === "connectors") return gitHosts.draw(pane);
 
   if (state.page === "activity") {
     // `/activity` with nothing under it is not a page here - there is no

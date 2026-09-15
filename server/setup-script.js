@@ -23,8 +23,8 @@
 // reports without a second setup.
 //
 // **And it gives each of them this app's tools.** Reporting is one
-// direction; the other is the agent reaching back - the repo's chat and
-// tasks, and what its owner connected: Linear, GitHub, e2b, whatever is on
+// direction; the other is the agent reaching back - the repo's tasks, and
+// what its owner connected: Linear, GitHub, e2b, whatever is on
 // the Connectors page. That is the MCP endpoint at {origin}/mcp, and the
 // same token opens it (mcp.js `reachableBy`: on the setup token the agent
 // is the person, in the person's repos). So the script writes an MCP
@@ -89,19 +89,20 @@
 //
 // **Two things about the installation change it, and nothing else does.**
 // A CoderVibes on somebody's own laptop has nobody to authenticate - it
-// answers on loopback and there is one person (edition.js) - and it has no
-// connectors to hand an agent, so both the token and the MCP server are
-// things the line would carry for no reason. A token in a line that
-// authenticates nothing is worse than noise: it is a step a person has to
-// do, and a credential they will think protects something. So `token:
-// "none"` drops every place the token appears - the argument, the check,
-// the env file, the export headers, each harness's own header - and `mcp:
-// false` drops every MCP server block. The script is otherwise the same
-// script, built from the same pieces, because the one way these stay in
-// step is that there is only one of them: a second template for the local
-// edition would be a second script to keep right, and it would be wrong
-// within a month. Defaults are what the hosted product has always sent,
-// byte for byte.
+// answers on loopback and there is one person (edition.js) - so a token in
+// its line is worse than noise: a step a person has to do, and a credential
+// they will think protects something. `token: "none"` drops every place the
+// token appears - the argument, the check, the env file, the export
+// headers, each harness's own header - and `mcp: false` drops every MCP
+// server block, for an installation with no tools to offer at all. The two
+// are independent: a local CoderVibes takes `token: "none"` *with* `mcp:
+// true`, because it does have tools (mcp-local.js - what was done here
+// before, and naming the session) and no door to put a token on. The script
+// is otherwise the same script, built from the same pieces, because the one
+// way these stay in step is that there is only one of them: a second
+// template for the local edition would be a second script to keep right,
+// and it would be wrong within a month. Defaults are what the hosted
+// product has always sent, byte for byte.
 import { MARKERS } from "./machine-source.js";
 
 /**
@@ -149,10 +150,16 @@ export function setupScript({ origin, token = "required", mcp = true }) {
 # repository and machine, what was asked, each tool call and what it came to,
 # what the agent answered - so the session reads on ${o} the way it read in
 # the terminal. Anything else picks the standard OTEL_EXPORTER_OTLP_* variables
-${withMcp(`# up from ~/.codervibes/env. Gives each of them ${o}'s tools too - the repo's
-# chat and tasks and the services you connected - as an MCP server named
+${withMcp(tokenless ? `# up from ~/.codervibes/env. Gives each of them ${o}'s tools too, as an MCP
+# server named codervibes (~/.claude.json, ~/.codex/config.toml,
+# ~/.gemini/settings.json, and ~/.codervibes/mcp.json for anything else):
+# discover and open_session read what the agents here have already done, so
+# one of them need not work out twice what another did, and name_session
+# says what a session is for. No token on any of it - this CoderVibes
+# answers on this machine and nowhere else. Works out` : `# up from ~/.codervibes/env. Gives each of them ${o}'s tools too - the repo's
+# tasks and the services you connected - as an MCP server named
 # codervibes (~/.claude.json, ~/.codex/config.toml, ~/.gemini/settings.json,
-# and ~/.codervibes/mcp.json for anything else)${tokenless ? "" : ", on the same token"}. Works out`)}${mcp ? "" : `# up from ~/.codervibes/env. This CoderVibes has no services connected to
+# and ~/.codervibes/mcp.json for anything else), on the same token. Works out`)}${mcp ? "" : `# up from ~/.codervibes/env. This CoderVibes has no services connected to
 # hand an agent, so it configures no MCP server in any of them. Works out
 `}# whether it is on a laptop or in a sandbox, and tells ${o} which. Safe to run
 # again: it replaces what it wrote and nothing else. It does not touch which
@@ -497,7 +504,7 @@ if [ -f "$CODEX" ] && grep -q '^\\[mcp_servers\\.codervibes\\]' "$CODEX" 2>/dev/
 fi
 cat >> "$CODEX" <<EOF
 
-# CoderVibes: this app's tools - the repo's chat and tasks, the services you connected.
+# CoderVibes: this app's tools - ${tokenless ? "what was done here before, and naming this session." : "the repo's tasks, the services you connected."}
 [mcp_servers.codervibes]
 url = "$MCP_URL"
 ${tokenless ? "" : `http_headers = { Authorization = "Bearer $TOKEN" }\n`}EOF

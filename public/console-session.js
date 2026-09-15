@@ -4,18 +4,18 @@
 // This was the bottom of console-home.js, and the reason it is a file of
 // its own is what it does *not* need. A session page is the answer a
 // search result opens onto, so a console with Search on it has to have
-// one - but the box you type into (console-chat.js) and the cards a task
-// is answered on (console-tasks.js) belong to Activity, which such a
-// console need not have at all. Everything about a session that does not
-// need those is here, and the box is handed in as a slot (`talk`): the
-// full console passes one, a slimmer shell passes none and the page is
-// the same page without a box on it.
+// one - but the cards a task is answered on (console-tasks.js) belong to
+// Activity, which such a console need not have at all. Everything about a
+// session that does not need those is here. There used to be a box on
+// this page to type a line to the agent, handed in as a slot; it went with
+// the messaging it posted into (2026-09), and what a person hands an agent
+// now is a task.
 //
 // The naming of a session - what to call it, who it was, where it ran -
 // is here too, because it is the same vocabulary the Activity table uses
 // and console-home.js imports it back. That direction is the rule: this
-// file may not import console-home.js, console-chat.js or
-// console-tasks.js, and a test refuses it if it grows one.
+// file may not import console-home.js or console-tasks.js, and a test
+// refuses it if it grows one.
 import { api } from "./api.js";
 import { el, button, ago, took, duration, count, money, problem, detailHead, chips, metric, metrics } from "./console-dom.js";
 import { listTable, listRow, statusCell } from "./console-list.js";
@@ -187,11 +187,11 @@ export const actorLine = (session) => (session.title ? [session.actor?.name, who
 // -------------------------------------------------------------- the links
 //
 // A session is a stretch of work by somebody, somewhere, because of
-// something: the agent, the machine, and what set it off - a task, a line
-// in a chat, a prompt. Each is a thing with a page of its own, and the
-// session says which by id (sessions.js), so each is a link here - the
-// agent's page, the machine's, the repo's Tasks or Chat tab. What it made
-// - the pull requests - is under the card and on the page, linked out.
+// something: the agent, the machine, and what set it off - a task, a
+// prompt. The agent and the machine have pages of their own, and the
+// session says which by id (sessions.js), so each is a link here; what
+// set it off is said and not linked. What it made - the pull requests -
+// is under the card and on the page, linked out.
 
 /** A link that opens a console page, or plain text when there is nowhere to go. */
 export function goTo(text, path, onOpen) {
@@ -214,14 +214,11 @@ function actorPath(session, pathFor) {
 }
 
 /**
- * What set the session off, in words, with where to read it when there is
- * somewhere: "a line from Ada" on the private wire opens the agent's Chat
- * tab. A task, or a line in a repo's room, is words - the repo's page that
- * showed them is gone (2026-09-07), so they are said and not linked. A
- * prompt is a harness's - the words are on the laptop it was typed on -
- * and a webhook or a schedule has no words at all.
+ * What set the session off, in words. Nothing is linked: a task's words are
+ * on the task, a prompt's are on the laptop it was typed on, and a webhook
+ * or a schedule has no words at all.
  */
-function triggerOf(trigger, session, pathFor) {
+function triggerOf(trigger) {
   if (!trigger?.kind) return null;
   const who = trigger.by?.name ?? null;
   const where = trigger.where ?? null;
@@ -229,11 +226,10 @@ function triggerOf(trigger, session, pathFor) {
   switch (trigger.kind) {
     case "task":
       return { text: `a task${from}`, path: null };
+    // Nothing says a line any more (the messaging went in 2026-09); records
+    // written before it did still say what set them off.
     case "line":
-      if (where?.kind === "agent") {
-        return { text: `a line${from}, said to it directly`, path: `${pathFor("agents", where.id)}#chat` };
-      }
-      return { text: `a line${from}${where?.name ? ` in ${where.name}` : ""}`, path: null };
+      return { text: `a line${from}${where?.kind === "agent" ? ", said to it directly" : where?.name ? ` in ${where.name}` : ""}`, path: null };
     case "prompt":
       return { text: `a prompt${from}`, path: null };
     case "webhook":
@@ -263,7 +259,7 @@ export function sessionLinks(session, { onOpen, pathFor }) {
     on.append("on ", el("span", "session-link-name", machine.name ?? machine.id));
     pieces.push(on);
   }
-  const trigger = triggerOf(session.trigger, session, pathFor);
+  const trigger = triggerOf(session.trigger);
   if (trigger) {
     const by = el("span", "session-link-on");
     by.append("set off by ", goTo(trigger.text, trigger.path, onOpen));
@@ -291,7 +287,7 @@ function doingLine(session) {
   else if (now.doing) text = `${name} is working: ${now.doing.summary ?? now.doing.tool}`;
   else text = `${name} is between calls · last seen ${ago(session.lastSeenAt)}`;
   const line = el("p", `home-doing${now.thinking || now.doing ? " moving" : ""}`);
-  line.append(el("span", "chat-doing-dot"), el("span", "chat-doing-text", text));
+  line.append(el("span", "doing-dot"), el("span", "doing-text", text));
   return line;
 }
 
@@ -828,7 +824,7 @@ function threadLine(thread) {
 //
 // Read from where the last read left off (console.js `loadSession`) and
 // drawn whole on every redraw, which is every event; so where the reader
-// had scrolled to is kept the way the chat keeps it.
+// had scrolled to is kept at the module, above.
 
 /** How many rows are drawn. The log is kept longer (console.js); the store longer still. */
 const TRANSCRIPT_ROWS = 400;
@@ -895,7 +891,7 @@ function transcriptRow(entry, { own, titles }) {
   const tail = el("span", "transcript-tail");
   row.append(tail);
   const said = (words, chars, who) => el("span", "transcript-words", own ? words : `${who} said ${plural(chars ?? 0, "character")}`);
-  // A person who chose no name is known by their email, as in the chat.
+  // A person who chose no name is known by their email, never as null.
   const who = entry.by?.name ?? entry.by?.id ?? (entry.by?.kind === "person" ? "A person" : "Somebody");
   // A subagent's line - a tool it called, or what it reported back - sits
   // indented under the subagent's name (Explore, a custom agent's), so
@@ -965,8 +961,10 @@ function transcriptRow(entry, { own, titles }) {
   return row;
 }
 
-// Where the reader is in the transcript, across redraws - see
-// `conversation` in console-chat.js for why this has to be remembered.
+// Where the reader is in the transcript, across redraws. Remembered at the
+// module rather than on the node: the page is rebuilt whole on every event,
+// and a reader who had scrolled back would otherwise be thrown to the
+// bottom a few times a minute.
 let transcriptPinned = true;
 let transcriptOffset = 0;
 
@@ -1012,10 +1010,10 @@ function transcriptBox(transcript, { own, titles }) {
 /**
  * The stop: ACP's session/cancel, as one button, drawn only when the
  * session can take it (acp.js `tierOf`) and pressable only while a turn
- * is running - `latency` is "instant" exactly while the loop holds its
- * steer poll, which is the one honest sign of that. When the session
- * cannot be stopped the line says why rather than showing a button that
- * would do nothing.
+ * is running. No session can take it - every agent here runs in a process
+ * this app cannot reach - so in practice this is the line that says why,
+ * which is the point: a Stop button that does nothing is worse than none.
+ * The button stays for the day something here can be stopped again.
  */
 function steerLine(session, steering, onChanged) {
   const line = el("div", "steer-line");
@@ -1025,8 +1023,8 @@ function steerLine(session, steering, onChanged) {
   }
   const running = steering.latency === "instant";
   const note = el("span", "steer-note", running
-    ? "Stops the turn now. The task it is on waits for you; a line in the box below brings it back."
-    : "Between turns - nothing running to stop. A line in the box below starts its next turn.");
+    ? "Stops the turn now. The task it is on waits for you; Resume on the task brings it back."
+    : "Between turns - nothing running to stop.");
   const stop = button("danger-btn steer-stop", "Stop", async () => {
     stop.disabled = true;
     stop.textContent = "Stopping…";
@@ -1118,14 +1116,9 @@ function reconnectModal(session, resume) {
  * @param {object|null} args.transcript its log so far - console.js `state.transcript`
  * @param {(path: string) => void} args.onOpen
  * @param {(page: string, id?: string) => string} args.pathFor
- * @param {() => void} [args.onChanged] re-read after a prompt or a stop
- * @param {((live: object|null, opts: {steer: boolean}) => Node|null)|null}
- *   [args.talk] the box you type into, handed in rather than imported -
- *   see the file's header. Called once whether the session is live or not,
- *   because it is also where the boxes of sessions read earlier are
- *   dropped (console-home.js `sessionTalk`).
+ * @param {() => void} [args.onChanged] re-read after a stop
  */
-export function sessionView({ data, failed, transcript = null, onOpen, pathFor, onChanged = null, talk = null }) {
+export function sessionView({ data, failed, transcript = null, onOpen, pathFor, onChanged = null }) {
   const pane = el("div", "detail detail-wide");
   if (failed) {
     pane.append(detailHead("Session"));
@@ -1143,10 +1136,6 @@ export function sessionView({ data, failed, transcript = null, onOpen, pathFor, 
   const live = session.state === "live" ? { ...session, now: data.now ?? {} } : null;
   // What can be done to it - acp.js `tierOf`, as the route passes it on.
   const can = data.steering ?? null;
-  // This page is the only one holding a box now, so it is the one that says
-  // which box to keep - which is why the slot is called for a session that
-  // is over too, and returns nothing for one.
-  const box = talk?.(live, { steer: Boolean(can?.prompt) }) ?? null;
   const counts = session.counts ?? {};
   const friction = session.friction ?? {};
   const outcome = OUTCOMES[session.outcome] ?? OUTCOMES.none;
@@ -1193,10 +1182,9 @@ export function sessionView({ data, failed, transcript = null, onOpen, pathFor, 
     if (live.now.trouble) {
       pieces.push(problem(live.now.trouble.message ? `Stuck since ${ago(live.now.trouble.since)}: ${live.now.trouble.message}` : `Stuck since ${ago(live.now.trouble.since)}.`));
     }
-    // The stop, for whoever may steer; the reason there is none, for them
-    // too. A stranger to the repo gets neither - the box is not theirs.
+    // The reason nothing can be done to it from here, for whoever could
+    // have done it. A stranger to the repo is not told; it is not theirs.
     if (own) pieces.push(steerLine(live, can, onChanged));
-    if (box) pieces.push(box);
     pane.append(panel("Right now", ...pieces));
   }
 

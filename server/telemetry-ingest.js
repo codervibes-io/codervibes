@@ -58,6 +58,7 @@ import * as spans from "./spans.js";
 import { costs } from "./costs.js";
 import { heardToolResult } from "./pull-opened.js";
 import { repos } from "./repos.js";
+import { parseRemote } from "./git-hosts/index.js";
 import * as guidance from "./guidance.js";
 import * as ingestToken from "./ingest-token.js";
 import { classify, KINDS as STEER_KINDS } from "./steer-kinds.js";
@@ -906,17 +907,24 @@ export async function ingestMetrics(who, body) {
 // ------------------------------------------------------------ the checkout
 
 /**
- * The `owner/name` a git remote names, for the GitHub remotes people have:
- * `https://github.com/o/n.git`, `git@github.com:o/n.git`, `ssh://git@github.com/o/n`,
- * or `o/n` itself. Anything else - another host, a local path - is null:
- * the session stays unlinked rather than linked to the wrong thing.
+ * The repository a git remote names, and which host it is on.
+ *
+ * The parsing is git-hosts/index.js, which knows all three hosts' remote
+ * spellings: this used to be a GitHub-only regular expression here, and a
+ * checkout of a GitLab project reported as a session in no repository at
+ * all - which on the Search page reads as "none" and on every listing as
+ * work that happened nowhere.
+ *
+ * Anything it cannot place - a host this app does not know, a local path -
+ * is null, as it always was: the session stays unlinked rather than linked
+ * to the wrong thing.
+ *
+ * This answers the name alone, which is all its callers ever wanted;
+ * the start hook above reads `parseRemote` itself, because it also has to
+ * write down which host.
  */
 export function fullNameOf(remote) {
-  const text = String(remote ?? "").trim();
-  const match =
-    /^(?:https?:\/\/(?:[^@\/]+@)?github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i.exec(text) ??
-    /^([\w.-]+)\/([\w.-]+)$/.exec(text);
-  return match ? `${match[1]}/${match[2]}` : null;
+  return parseRemote(remote)?.fullName ?? null;
 }
 
 /** The tools whose `file_path` is a file the work landed on, in Claude Code's and Gemini CLI's names. */
@@ -1322,7 +1330,9 @@ export async function noteHook(who, { session, event = null, at: when = null, re
     }
 
     default: {
-      const fullName = repo ? fullNameOf(String(repo)) : null;
+      const remote = repo ? parseRemote(String(repo)) : null;
+      const fullName = remote?.fullName ?? null;
+      const host = remote?.host ?? "github";
       const cleanBranch = String(branch ?? "").trim().slice(0, 200) || null;
       // The repo here the checkout is of, so the session is that repo's -
       // in its workspace, on its pages, readable by the people on it. A
@@ -1330,8 +1340,8 @@ export async function noteHook(who, { session, event = null, at: when = null, re
       // on no page: a person's own setup reports every terminal they
       // open, and the ones that are not this installation's work stay
       // off it.
-      const home = fullName ? repos.checkoutFor(fullName, record.owner) : null;
-      sessionLog.noteBranch(record.id, { repo: fullName, branch: cleanBranch, repoId: home?.id ?? null });
+      const home = fullName ? repos.checkoutFor(fullName, record.owner, host) : null;
+      sessionLog.noteBranch(record.id, { repo: fullName, host, branch: cleanBranch, repoId: home?.id ?? null });
       // Where it ran. A laptop reports its hostname and an e2b sandbox its
       // own id, and either is the machine as far as this app is concerned -
       // there is no other record of one to reconcile it against any more.
@@ -1347,7 +1357,7 @@ export async function noteHook(who, { session, event = null, at: when = null, re
       // installation has no place for.
       if (where) await ingestToken.noteMachine(record.owner, where);
       if (where) sessionLog.noteMachine(record.id, where);
-      return { session: record.id, event: "start", repo: fullName, branch: cleanBranch, machine: where };
+      return { session: record.id, event: "start", repo: fullName, host, branch: cleanBranch, machine: where };
     }
   }
 }

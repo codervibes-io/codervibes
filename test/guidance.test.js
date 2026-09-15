@@ -3,8 +3,8 @@
 // The signals are caught where they already happen - the wake bell, a
 // retry, a task moved, a turn asked - and each lands on the actor's live
 // session as a count. What these prove is that the right session counts
-// the right thing, that an agent with no live session counts nothing, and
-// that nothing said is on the record.
+// the right thing, that an agent with no live session counts nothing but
+// is set off, and that nothing said is on the record.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -26,55 +26,9 @@ test.after(() => fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, r
 
 const scout = { id: "a-scout", name: "Scout" };
 const nomad = { id: "a-nomad", name: "Nomad" };
-const room = { "w1": [scout, nomad] };
-const agentsIn = (repoId) => room[repoId] ?? [];
 const open = (agent, extra = {}) =>
   sessions.open({ kind: "resident", owner: "yoav", actor: { kind: "agent", ...agent }, repoId: "w1", ...extra });
 const steering = (session) => sessions.guidanceOf(session);
-
-test("a room line counts on the agents it addresses, and only on those with a live session", () => {
-  const live = open(scout);
-  // Nomad has no session: the line wakes it, and the session that wake
-  // produces starts clean.
-  const counted = guidance.noteLine("w1", { text: "@Scout and @Nomad: stop and report", user: "yoav" }, { agentsIn });
-  assert.deepEqual(counted, [scout.id]);
-  assert.equal(steering(live).humanLines, 1);
-
-  // A line to nobody in particular is overheard, not steering.
-  assert.deepEqual(guidance.noteLine("w1", { text: "hm, the build is slow", user: "yoav" }, { agentsIn }), []);
-  assert.equal(steering(live).humanLines, 1);
-
-  // @agents and @all are to everybody who is there.
-  assert.deepEqual(guidance.noteLine("w1", { text: "@agents pause", user: "yoav" }, { agentsIn }), [scout.id]);
-  assert.equal(steering(live).humanLines, 2);
-
-  // An agent's line is not a person steering, whoever it names.
-  assert.deepEqual(guidance.noteLine("w1", { text: "@Scout done", agent: nomad }, { agentsIn }), []);
-  assert.equal(steering(live).humanLines, 2);
-});
-
-test("the private line counts on that agent alone", () => {
-  const live = open(scout);
-  const other = open(nomad);
-  assert.deepEqual(guidance.noteLine("agent:a-scout", { text: "try the other branch", user: "yoav" }, { agentsIn }), [scout.id]);
-  assert.equal(steering(live).humanLines, 1);
-  assert.equal(steering(other).humanLines, 0);
-  assert.deepEqual(guidance.noteLine("agent:a-nobody", { text: "hello?", user: "yoav" }, { agentsIn }), []);
-});
-
-test("the bell is where the lines are heard, and a watcher that stops hears no more", () => {
-  const live = open(scout);
-  const stop = guidance.watchGuidance({ agentsIn });
-  wake("w1", { message: { text: "Scout, look at the failing test", user: "yoav" } });
-  wake("agent:a-scout", { message: { text: "and the other one", user: "yoav" } });
-  // Rings that carry no line - a task, a poll - count nothing and break nothing.
-  wake("w1");
-  wake("agent:a-scout", { task: "t1" });
-  assert.equal(steering(live).humanLines, 2);
-  stop();
-  wake("w1", { message: { text: "Scout, one more", user: "yoav" } });
-  assert.equal(steering(live).humanLines, 2);
-});
 
 test("a retry counts on the agent that failed, a move on the one it came to", () => {
   const failed = open(scout);
@@ -127,15 +81,30 @@ test("a prompt over a running turn is the person cutting the agent off, and a ca
   assert.equal(guidance.cancelled("ses_0000000000000000"), null);
 });
 
-test("the words are counted where they are said: a room line is not counted twice by the door", () => {
+test("a caller whose words are counted elsewhere gets the turn without the line", () => {
   const live = open(scout);
   sessionEvents.append(live.id, "platform.status", { status: "idle" });
-  // What acp.js does for a prompt it posts into the room: the turn and the
-  // follow-up are the door's, the line is the bell's.
   guidance.prompted(live.id, { line: false });
-  guidance.noteLine("agent:a-scout", { text: "try the other branch", user: "yoav" }, { agentsIn });
   assert.equal(live.counts.turns, 1);
-  assert.equal(steering(live).humanLines, 1, "one line said once");
+  assert.equal(steering(live).humanLines, 0, "the turn is this door's; the line is somebody else's to count");
+});
+
+test("a task rung at an agent with no live session is what that session says set it off", () => {
+  const stop = guidance.watchGuidance();
+  const task = { id: "t-1", repoId: "w1", to: { id: nomad.id, name: nomad.name }, from: { id: scout.id, name: scout.name }, createdAt: new Date().toISOString() };
+  wake(`agent:${nomad.id}`, { task });
+  // Rings that carry nothing - a poll, an approval - count nothing and
+  // break nothing.
+  wake("w1");
+  wake(`agent:${nomad.id}`);
+  const woken = open(nomad);
+  assert.equal(woken.trigger?.kind, "task");
+  assert.equal(woken.trigger.id, "t-1");
+  assert.equal(woken.trigger.by?.name, "Scout", "who sent it, by name, and not a word of it");
+  stop();
+  sessionInternals.reset();
+  wake(`agent:${nomad.id}`, { task: { ...task, id: "t-2" } });
+  assert.equal(open(nomad).trigger, null, "a watcher that stopped hears no more");
 });
 
 test("the clock is the person's while the agent waits, and nothing is charged for a turn that never idled", () => {
@@ -149,6 +118,7 @@ test("the clock is the person's while the agent waits, and nothing is charged fo
 
 test("nothing said is on the record", () => {
   const live = open(scout);
-  guidance.noteLine("agent:a-scout", { text: "the password is hunter2", user: "yoav" }, { agentsIn });
+  guidance.prompted(live.id);
+  guidance.noteTask(`agent:${scout.id}`, { id: "t-9", repoId: "w1", to: { id: scout.id }, from: { id: nomad.id, name: "Nomad" }, detail: "the password is hunter2" });
   assert.doesNotMatch(JSON.stringify(live), /hunter2|yoav@/);
 });

@@ -634,7 +634,7 @@ const PLACES = [
         note:
           "It works out where it is and what is installed there, and is safe to run again. " +
           (token
-            ? "Everything it sets up reports on this token, and gets this app's tools with it - your repos' chat and tasks, " +
+            ? "Everything it sets up reports on this token, and gets this app's tools with it - your repos' tasks, " +
               "and the services you connected - as an MCP server named codervibes."
             : // No token to name and no tools to hand over: say what it does
               // do instead, rather than a sentence with the nouns taken out.
@@ -735,7 +735,7 @@ export function connect(harness, { origin, token = null, agent = null } = {}) {
   const tools = agent
     ? {
         title: "Give it this app's tools",
-        note: "The repo's files, tasks, chat and pull requests, as the agent you just invited - on the agent's own token.",
+        note: "The repo's tasks and pull requests, as the agent you just invited - on the agent's own token.",
         snippet: mcpSnippet(harness, agent),
       }
     : harness.agent

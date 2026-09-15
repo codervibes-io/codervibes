@@ -8,10 +8,10 @@
 // Performance page scores: this session opened these pull requests, took
 // this much steering, cost this much.
 //
-// The record is counts, ids and names. Never chat text, never a tool's
+// The record is counts, ids and names. Never what was said, never a tool's
 // input, never a file path - a session is everyone's to read (the
-// installation sees the installation's activity) while the chat and the
-// files are the repo's. The spans behind the counts carry the same
+// installation sees the installation's activity) while the files and the
+// transcripts are the repo's and the harness's. The spans behind the counts carry the same
 // discipline (telemetry.js), so a page that goes from a session to its
 // timeline crosses no line either.
 //
@@ -28,12 +28,12 @@
 // Beside the counts, a session says where it sits in the rest of the
 // system, by id: which agent (`actor`), on which machine (`machine`), in
 // which repo, which tasks it took, which pull requests came of it, which
-// Slack threads it spoke into (`threads`), and what set it off (`trigger`) - the task or the line that woke a resident, the
+// Slack threads it spoke into (`threads`), and what set it off (`trigger`) - the task that woke an agent, the
 // line a person typed to the assistant, the first prompt of a laptop
 // harness. Each of those is a thing with a page of its own, and a session
 // nobody can get to from its agent, its machine, its pull request or the
 // line that started it is a row with no story. The trigger is the id of the
-// thing and who sent it, never the words: the words are the chat's or the
+// thing and who sent it, never the words: the words are the task's or the
 // task's, and the routes fetch them for a viewer who could read them there.
 //
 // Counts are kept up as the spans arrive (`onSpan`), so a live session's row
@@ -105,7 +105,11 @@ const records = new Map();
 /** id -> timer, writes waiting to happen. */
 const writes = new Map();
 
-/** What can set a session off. `line` is a chat line, in a room or on the private wire. */
+/**
+ * What can set a session off. `line` is kept for records written before the
+ * messaging layer went (2026-09): nothing produces one now, and a session
+ * page that finds one still says what set that session off.
+ */
 export const TRIGGER_KINDS = ["task", "line", "prompt", "webhook", "schedule"];
 
 /**
@@ -133,8 +137,7 @@ export function cleanTrigger(trigger) {
   return {
     kind: trigger.kind,
     id: trigger.id == null ? null : String(trigger.id),
-    // Where the thing lives, for looking it up again: the repo (a room
-    // line, a task) or `agent:<id>` (the private wire).
+    // Where the thing lives, for looking it up again: the repo a task is in.
     key: trigger.key == null ? null : String(trigger.key),
     by: by ? { kind: by.kind ?? null, id: by.id ?? null, name: by.name ?? null } : null,
     at: Number(trigger.at) || Date.now(),
@@ -822,10 +825,14 @@ function rename(id, name) {
 }
 
 /** Note the repository and branch the session's work went to. */
-export function noteBranch(id, { repo = null, branch = null, repoId = null } = {}) {
+export function noteBranch(id, { repo = null, branch = null, repoId = null, host = "github" } = {}) {
   const record = records.get(id);
   if (!record) return;
-  if (repo && !record.repo) record.repo = { kind: "github", fullName: repo };
+  // `host` is which of the three git hosts the remote was on
+  // (git-hosts/index.js `parseRemote`). `kind` stays what it was: it says
+  // this is a repository reference rather than anything else, and every
+  // record written before there was a choice of host is GitHub's.
+  if (repo && !record.repo) record.repo = { kind: "github", fullName: repo, host: host ?? "github" };
   // The repo here that the checkout is of (repos.js checkoutFor), when the
   // hook's remote names one: what puts a laptop's session in a workspace.
   if (repoId && !record.repoId) record.repoId = repoId;

@@ -69,7 +69,21 @@ export function parseBranch(headRef) {
   return null;
 }
 
-export const idOf = (repo, number) => `${repo}#${number}`;
+/**
+ * A record's id, which is what a person would write down.
+ *
+ * `ada/engine#12` on GitHub, exactly as it always was: a prefix on every
+ * record would rename every one already stored, and GitHub is what every
+ * record written before there were three hosts is. The other two say which
+ * they are, and say it the way their host writes it - GitLab numbers a
+ * merge request `!7`, and quoting it as `#7` would be a number a person
+ * cannot paste back anywhere.
+ */
+export const idOf = (repo, number, host = "github") => {
+  if (host === "gitlab") return `gitlab:${repo}!${number}`;
+  if (!host || host === "github") return `${repo}#${number}`;
+  return `${host}:${repo}#${number}`;
+};
 
 /**
  * An empty record; the folds fill it.
@@ -77,10 +91,14 @@ export const idOf = (repo, number) => `${repo}#${number}`;
  * `agentId` and `repoId` come from the push that made the branch, or
  * from the branch name when nothing remembered the push.
  */
-function blank(repo, number) {
+function blank(repo, number, host = "github") {
   return {
-    id: idOf(repo, number),
+    id: idOf(repo, number, host),
     kind: "pull",
+    // Which of the three hosts this is on (git-hosts/index.js). Absent on
+    // every record written before there was a choice, and those are
+    // GitHub's - so the default is read rather than backfilled.
+    host,
     repo,
     number: Number(number),
     title: null,
@@ -192,10 +210,14 @@ function remember(record) {
   if (recent.size > MAX_RECENT) recent.delete(recent.keys().next().value);
 }
 
-async function load(repo, number) {
-  const known = recent.get(idOf(repo, number));
+async function load(repo, number, host = "github") {
+  const id = idOf(repo, number, host);
+  const known = recent.get(id);
   if (known) return known;
-  const stored = store.loadPull ? await store.loadPull(repo, Number(number)) : null;
+  // The id as well as the pair: the json store keys its file by the
+  // record's own id, and a GitLab record and a GitHub one can be the same
+  // repository path and the same number.
+  const stored = store.loadPull ? await store.loadPull(repo, Number(number), id) : null;
   if (stored) remember(stored);
   return stored;
 }
@@ -257,9 +279,14 @@ async function sessionByShort(sessionShort, repoId) {
  * harness on somebody's laptop, whose branch is whatever the person named
  * it (`POST /api/harness/session`). The most recent one, when several were.
  */
-async function sessionOnBranch(repo, branch) {
+async function sessionOnBranch(repo, branch, host = "github") {
   if (!repo || !branch) return null;
-  const matches = (record) => record.repo?.fullName === repo && record.branch === branch;
+  // The host as well as the path: `ada/engine` on GitHub and `ada/engine`
+  // on GitLab are two repositories, and a session in one must not be linked
+  // to a pull request in the other. A session recorded before sessions said
+  // which host they were on is GitHub's, the same way a record is.
+  const matches = (record) =>
+    record.repo?.fullName === repo && (record.repo?.host ?? "github") === host && record.branch === branch;
   const newest = (list) => list.filter(matches).sort((a, b) => b.startedAt - a.startedAt)[0] ?? null;
   const live = newest(sessionLog.inMemory());
   if (live) return live;
@@ -283,7 +310,7 @@ async function link(record, { sessionId = null, agentId = null, repoId = null, t
   linkTask(record, taskId);
   let session = sessionId ? await sessionLog.get(sessionId) : null;
   if (!session && parsed?.sessionShort) session = await sessionByShort(parsed.sessionShort, record.repoId);
-  if (!session && !parsed) session = await sessionOnBranch(record.repo, record.headRef);
+  if (!session && !parsed) session = await sessionOnBranch(record.repo, record.headRef, record.host ?? "github");
   if (session) {
     if (!record.sessionIds.includes(session.id) && record.sessionIds.length < MAX_SESSIONS) record.sessionIds.push(session.id);
     if (!record.agentId && session.actor?.id) record.agentId = session.actor.id;
@@ -306,9 +333,9 @@ async function link(record, { sessionId = null, agentId = null, repoId = null, t
  * run on it (external-agents/sync.js) - and tell the session where the
  * pull request stands. Makes the record when the webhook has not yet.
  */
-export async function linkSession(repo, number, sessionId) {
+export async function linkSession(repo, number, sessionId, { host = "github" } = {}) {
   if (!repo || !Number(number) || !sessionId) return null;
-  const record = (await load(repo, number)) ?? blank(repo, number);
+  const record = (await load(repo, number, host)) ?? blank(repo, number, host);
   if (!record.sessionIds.includes(sessionId)) {
     if (record.sessionIds.length >= MAX_SESSIONS) return record;
     record.sessionIds.push(sessionId);
@@ -336,6 +363,9 @@ async function tellSessions(record) {
     url: record.url,
     state: record.state,
     repo: record.repo,
+    // Which host, so a session's card can say "merge request" where that
+    // is the word, and link to the right place when the record has no URL.
+    host: record.host ?? "github",
     openedAt: record.openedAt ?? null,
     mergedAt: record.mergedAt ?? null,
     closedAt: record.closedAt ?? null,
@@ -378,8 +408,8 @@ async function tellSessions(record) {
  * in the rest and, arriving at a process that has lost this, still finds the
  * session by the branch name.
  */
-export async function noteOpened({ repoId, sessionId = null, agentId = null, taskId = null, repo, number, url, branch, title, by = null }) {
-  const record = (await load(repo, number)) ?? blank(repo, number);
+export async function noteOpened({ repoId, sessionId = null, agentId = null, taskId = null, host = "github", repo, number, url, branch, title, by = null }) {
+  const record = (await load(repo, number, host)) ?? blank(repo, number, host);
   if (!record.openedAt) record.openedAt = Date.now();
   record.title = title ?? record.title;
   record.url = url ?? record.url;
@@ -397,8 +427,8 @@ export async function noteOpened({ repoId, sessionId = null, agentId = null, tas
  * Makes the record when the webhook has not yet: the task tab then shows
  * the number, and the webhook fills in the rest when it arrives.
  */
-export async function noteTask(repo, number, taskId, { repoId = null } = {}) {
-  const record = (await load(repo, number)) ?? blank(repo, number);
+export async function noteTask(repo, number, taskId, { repoId = null, host = "github" } = {}) {
+  const record = (await load(repo, number, host)) ?? blank(repo, number, host);
   if (!record.repoId && repoId) record.repoId = repoId;
   record.readyAt = Date.now();
   linkTask(record, taskId);
@@ -461,9 +491,13 @@ function foldDiff(record, event, { at = Date.now() } = {}) {
  */
 export async function apply(event) {
   if (!event?.repo || !event?.number) return null;
-  return withSpan("pull.fold", { "cv.repo": event.repo, "cv.pr.number": event.number, "cv.pull.event": event.kind }, async () => {
-    const held = await load(event.repo, event.number);
-    const record = held ?? blank(event.repo, event.number);
+  // An event that does not say which host it is from is GitHub's: every
+  // webhook this app has ever taken is, and so is every record already
+  // stored. See `idOf`.
+  const host = event.host ?? "github";
+  return withSpan("pull.fold", { "cv.repo": event.repo, "cv.pr.number": event.number, "cv.pull.event": event.kind, "cv.pull.host": host }, async () => {
+    const held = await load(event.repo, event.number, host);
+    const record = held ?? blank(event.repo, event.number, host);
     const before = JSON.stringify(record);
     const wasMerged = record.state === "merged";
 
@@ -599,6 +633,9 @@ export function sameCommit(a, b) {
 export function relationOf(candidate, original) {
   if (!candidate || !original) return null;
   if (candidate.repo !== original.repo || candidate.number === original.number) return null;
+  // Two hosts can spell a repository the same way, and a revert on one has
+  // undone nothing on the other.
+  if ((candidate.host ?? "github") !== (original.host ?? "github")) return null;
   if (original.state !== "merged" || !original.mergedAt) return null;
   const undoes =
     (candidate.reverts != null && Number(candidate.reverts) === Number(original.number)) ||
@@ -878,8 +915,8 @@ export async function recost(repo, number) {
 
 // ---------------------------------------------------------------- reading
 
-export async function get(repo, number) {
-  return load(repo, number);
+export async function get(repo, number, host = "github") {
+  return load(repo, number, host);
 }
 
 /** Pull requests, newest activity first. */
@@ -934,6 +971,7 @@ export const forRepo = (what, options = {}) => list({ ...options, ...scopeOf(wha
 export const summarize = (record) => ({
   id: record.id,
   repo: record.repo,
+  host: record.host ?? "github",
   number: record.number,
   url: record.url ?? null,
   title: record.title ?? null,

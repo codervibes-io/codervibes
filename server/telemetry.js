@@ -18,7 +18,7 @@
 // nobody asked for.
 //
 // Attributes are `cv.*`. Every one of them is a count, an id or a name -
-// never chat text, tool input, a file path. A span leaves through the OTLP
+// never what was said, tool input, a file path. A span leaves through the OTLP
 // door to a backend this installation does not run, and the sessions built
 // from spans are everyone's to read (sessions.js): what goes on a span is
 // what everyone on the installation may see.

@@ -18,7 +18,7 @@ const WHERE = { laptop: "on your own machine" };
 /**
  * A harness of its own, as a page: one on a laptop reporting for nobody in
  * particular. What it is and where, how to connect it (the token was shown
- * once), what its sessions came to, and the way to forget it. No chat and
+ * once), what its sessions came to, and the way to forget it. No
  * no tasks - it is a process somebody runs, not an agent this app can
  * reach. A harness that reports *for* an agent has no page of its own: it
  * is that agent's location, on the agent's page.

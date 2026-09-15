@@ -22,8 +22,8 @@
 // **A tool cannot exist without a permission.** Every tool definition in
 // tools.js, fleet-tools.js, collab-tools.js and the connectors carries a
 // `permission` field - either an id in the catalogue below or `null` for the
-// handful that are membership rather than privilege (reading the chat, seeing
-// who is here). A test holds the catalogue and the registries to the same
+// handful that are membership rather than privilege (seeing who is here,
+// handing work around). A test holds the catalogue and the registries to the same
 // set, so adding a tool without deciding what permits it fails the suite
 // rather than shipping as "always allowed".
 //
@@ -162,13 +162,13 @@ export const groupOf = (id, { owner } = {}) => indexed({ owner }).get(id)?.group
  * so what is left to decide is what it may do to things *outside* the repo:
  * open a pull request, merge one, reach the services its owner connected.
  *
- * Reading and talking are not on the list because they are not grants: a
- * member reads the room and hands work around by being a member.
+ * Reading and handing work around are not on the list because they are not
+ * grants: a member does both by being a member.
  */
 export const PRESETS = {
   reader: {
     label: "Reader",
-    hint: "In the room: reads the chat, takes and hands over tasks, and changes nothing outside the repo.",
+    hint: "In the room: sees who is here, takes and hands over tasks, and changes nothing outside the repo.",
     pick: () => false,
   },
   developer: {
@@ -324,7 +324,7 @@ export function describeGrant(permissions, { owner = null, agent = true } = {}) 
   return rows;
 }
 
-/** A sentence for a chat or a mail. */
+/** A sentence for a page or a mail. */
 export const grantSentence = (permissions, options) =>
   describeGrant(permissions, options)
     .map((row) => `${row.label}: ${row.granted.join(", ")}`)

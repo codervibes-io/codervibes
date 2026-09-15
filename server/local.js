@@ -8,13 +8,24 @@
 // answering for its own shape.
 //
 // What this is not, and none of it is an omission: no sign-in, no
-// workspaces, no repo chat, no tasks handed between agents, no connectors,
-// no sandbox agents, no GitHub App, no pull request polling, no mail, no
-// inference, no MCP. Every one of those is a thing that only makes sense
-// with other people in it, and the local edition has one person by
-// construction. There are no cloud loops here either: nothing on a timer
-// reaches the network, so a laptop with the lid shut is a process doing
-// nothing rather than a process retrying something.
+// workspaces, no tasks handed between agents, no sandbox
+// agents, no GitHub App, no mail, no inference. Every one of those is a
+// thing that only makes sense with other people in it, and the local
+// edition has one person by construction.
+//
+// What it does have, on top of the pages, is an MCP server of its own
+// (mcp-local.js) at /mcp: three tools, no token, so the coding agent on this
+// machine can read the record it has been filling. That is the same
+// direction the hosted product's endpoint points in, cut to what an
+// installation with one person and no connected services actually holds.
+//
+// One thing reaches the network, and only when a person asks for it: a git
+// host they connect on the Connectors page (server/git-hosts/). A personal
+// token, their own pull requests, and the answer to "did it merge" - which
+// is the one fact this edition could not learn without an App, and the one
+// Performance is most often asked for. Nothing else is on a timer: until a
+// token is pasted, a laptop with the lid shut is a process doing nothing
+// rather than a process retrying something.
 //
 // Three things are different from index.js, and all three are edition.js:
 //
@@ -75,6 +86,7 @@ const { LOCAL_USER, MAX_EXECUTORS, sameMachine, isLoopback } = await import("./e
 const { AUTH_MODE } = await import("./auth.js");
 const { sessionMiddleware, requireUser, requireViewer } = await import("./session.js");
 const { mountOtlp } = await import("./otlp.js");
+const { mountLocalMcp } = await import("./mcp-local.js");
 const { scopeFor } = await import("./scope.js");
 const { WHERES } = await import("./session-where.js");
 const ingestToken = await import("./ingest-token.js");
@@ -90,6 +102,9 @@ const { mount: mountSearch, refreshSearchCatalog } = await import("./pages/searc
 const { mount: mountTools } = await import("./pages/tools.js");
 const { mount: mountSessions } = await import("./pages/sessions.js");
 const { mount: mountIngest } = await import("./pages/ingest.js");
+const gitHosts = await import("./git-hosts/index.js");
+const gitHostCredentials = await import("./git-hosts/credentials.js");
+const gitHostSync = await import("./git-hosts/sync.js");
 
 // BIND_HOST after edition.js, because `isLoopback` is the one place that
 // knows what counts as this machine. Refused rather than ignored: somebody
@@ -144,6 +159,13 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// The agent's own door: three tools over JSON-RPC, no credential asked for.
+// Mounted here for the same reason index.js mounts its own here - before the
+// session middleware, so an agent speaking MCP and a browser carrying a
+// cookie cannot be confused for one another - and after `sameMachine`, which
+// is the only thing standing in front of it (mcp-local.js).
+mountLocalMcp(app, { user: LOCAL_USER });
+
 app.use("/api", sessionMiddleware);
 
 // -------------------------------------------------------------- the scope
@@ -189,11 +211,16 @@ const scope = scopeFor({
 
   /**
    * The setup line this installation hands out: no token, because there is
-   * nobody to authenticate, and no MCP server, because there are no
-   * connected services to hand an agent. See setup-script.js, which drops
-   * every place each appears rather than writing an empty one.
+   * nobody to authenticate - see setup-script.js, which drops every place
+   * the token appears rather than writing an empty one.
+   *
+   * The MCP server is written into every harness all the same, without a
+   * header: what it offers here is the three tools of mcp-local.js, which
+   * are about the record this installation kept rather than about services
+   * it has not got. An agent that cannot ask what was done here before is
+   * an agent that works it out again every time.
    */
-  setup: { token: "none", mcp: false },
+  setup: { token: "none", mcp: true },
 });
 
 const { wrap } = scope;
@@ -283,6 +310,65 @@ app.delete("/api/executors/:id", requireUser, wrap(async (req, res) => {
   res.json({ forgotten: true, id });
 }));
 
+
+// ------------------------------------------------------------- git hosts
+//
+// The fifth page: GitHub, GitLab or Bitbucket connected with a personal
+// token, so the pull requests this person opens are followed until they
+// merge or close and Performance counts them rather than only counting the
+// ones it saw opened.
+//
+// A token and nothing else - no App, no OAuth application to register, no
+// callback address a laptop does not have. The token is checked with the
+// host before it is kept and is never in an answer; see
+// git-hosts/credentials.js.
+
+/** What the page draws: every host, connected or not, and never a token. */
+app.get("/api/git-hosts", requireUser, wrap(async (req, res) => {
+  const connections = await gitHostCredentials.listFor(req.cv.user);
+  const byHost = new Map(connections.map((entry) => [entry.host, entry]));
+  res.json({ hosts: gitHosts.ALL.map((host) => gitHosts.describeHost(host, byHost.get(host.id) ?? null)) });
+}));
+
+/**
+ * Connect one: `{ token }`, and `{ username, token }` for Bitbucket, which
+ * signs in with both halves.
+ *
+ * A refusal is the host's own sentence with a 400 or a 401 on it - the
+ * person is looking at the box they pasted into, and "401" there is a bug
+ * report rather than an answer.
+ */
+app.post("/api/git-hosts/:host", requireUser, wrap(async (req, res) => {
+  const host = gitHosts.hostOrRefuse(req.params.host);
+  const credential = { token: String(req.body?.token ?? "").trim() };
+  if (req.body?.username) credential.username = String(req.body.username).trim();
+  const connected = await gitHostCredentials.connect(req.cv.user, host.id, credential);
+  // What it will now do, straight away rather than in five minutes: a
+  // person who has just connected a host is a person waiting to see
+  // whether it worked. Best effort - the connection stands either way.
+  const swept = await gitHostSync.sweep(req.cv.user, {}).catch(() => null);
+  res.json({ ...connected, swept: swept?.seen ?? 0 });
+}));
+
+/** Forget one. The records it already folded are what happened, and stay. */
+app.delete("/api/git-hosts/:host", requireUser, wrap(async (req, res) => {
+  const host = gitHosts.hostOrRefuse(req.params.host);
+  const forgotten = await gitHostCredentials.disconnect(req.cv.user, host.id);
+  if (!forgotten) return res.status(404).json({ error: `${host.label} is not connected.` });
+  res.json({ forgotten: true, host: host.id });
+}));
+
+/**
+ * Ask now rather than at the next tick - the Check now button, and what a
+ * test drives instead of waiting five minutes for a timer.
+ */
+app.post("/api/git-hosts/:host/sync", requireUser, wrap(async (req, res) => {
+  const host = gitHosts.hostOrRefuse(req.params.host);
+  const credential = await gitHostCredentials.credentialFor(req.cv.user, host.id);
+  if (!credential) return res.status(404).json({ error: `${host.label} is not connected.` });
+  res.json(await gitHostSync.sweep(req.cv.user, {}));
+}));
+
 // `/setup.sh`, `/healthz`, and the setup line the Executors page prints.
 // Mounted whole rather than picked apart: what the script carries and what
 // the line carries are both read off `scope.setup`, so a tokenless
@@ -351,6 +437,7 @@ for (const route of [
   "/search",
   "/tools",
   "/tools/:toolName",
+  "/connectors",
   "/activity/:sessionId",
 ]) {
   app.get(route, consolePage);
@@ -364,6 +451,7 @@ app.use(express.static(PUBLIC_DIR, { index: false }));
 app.listen(PORT, HOST, () => {
   console.log(`CoderVibes  ${ORIGIN}`);
   console.log(`connect     ${setupCommand({ origin: ORIGIN })}`);
+  console.log(`agent tools ${ORIGIN}/mcp - discover, open_session, name_session (the line above wires them in)`);
   console.log(`records     ${process.env.CODERVIBES_DATA_DIR} (back that up; nothing else will)`);
   console.log(`executors   ${MAX_EXECUTORS} at a time - Forget one on the Executors page to make room`);
 
@@ -378,4 +466,9 @@ app.listen(PORT, HOST, () => {
   refreshSearchCatalog(scope);
   search.warm().then((n) => console.log(`search      ${n} session(s) indexed`)).catch((err) => console.warn(`search: ${err.message}`));
   search.follow();
+
+  // And the one loop that can reach the network, which asks nobody anything
+  // until a git host is connected on the Connectors page. One person, so
+  // one row to sweep.
+  gitHostSync.start({ users: () => [LOCAL_USER] });
 });

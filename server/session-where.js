@@ -59,10 +59,10 @@ export const DEFAULT_WHERES = ["workspace"];
  * work in a connected repository is `workspace` whoever did it.
  *
  * @param {string|null} scope the workspace being looked at
- * @param {{repoId?: string|null, repository?: string|null, owner?: string|null}} work
+ * @param {{repoId?: string|null, repository?: string|null, host?: string|null, owner?: string|null}} work
  * @returns {"workspace"|"external"|"none"|null}
  */
-export function whereIn(scope, { repoId = null, repository = null, owner = null } = {}) {
+export function whereIn(scope, { repoId = null, repository = null, host = "github", owner = null } = {}) {
   if (!scope) return null;
   // The demo shows the demo's work and nobody else's.
   //
@@ -80,7 +80,10 @@ export function whereIn(scope, { repoId = null, repository = null, owner = null 
   if (isDemo(scope) && !workspaces.isMember(workspaces.find(scope), owner)) return null;
   const own = repoId ? repos.repos.get(repoId)?.workspace ?? null : null;
   if (own === scope) return "workspace";
-  for (const repo of repository ? repos.ofRepository(repository) : []) {
+  // The host as well as the name: a repo here is a repository on GitHub,
+  // and work on a GitLab project that happens to have the same path is not
+  // that repo's (repos.js `ofRepository`).
+  for (const repo of repository ? repos.ofRepository(repository, host) : []) {
     if (repo.workspace === scope) return "workspace";
   }
   // Not this workspace's repo. It is still this workspace's business if the
@@ -97,11 +100,11 @@ const isDemo = (scope) => workspaces.isDemo(workspaces.find(scope));
  * workspace, for the reads that ask "anywhere" rather than "here"
  * (index.js `sessionVisible`).
  */
-export function roomsOf({ repoId = null, repository = null, owner = null } = {}) {
+export function roomsOf({ repoId = null, repository = null, host = "github", owner = null } = {}) {
   const rooms = new Set();
   const own = repoId ? repos.repos.get(repoId)?.workspace ?? null : null;
   if (own) rooms.add(own);
-  for (const repo of repository ? repos.ofRepository(repository) : []) if (repo.workspace) rooms.add(repo.workspace);
+  for (const repo of repository ? repos.ofRepository(repository, host) : []) if (repo.workspace) rooms.add(repo.workspace);
   // The owner's own workspaces, for work in none of their repos. Their
   // personal one is in the list, so a person's scratch work is always
   // somewhere they can find it.
