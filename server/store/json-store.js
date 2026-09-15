@@ -7,8 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// Next to the app by default. CODERVIBES_DATA_DIR moves the whole set, which
-// is what lets a test run against a scratch directory instead of the real one.
+// Where the documents sit. CODERVIBES_DATA_DIR moves the whole set, which is
+// what lets a test run against a scratch directory instead of the real one -
+// and what the local edition sets before anything here loads: server/local.js
+// settles it on ~/.codervibes/data, so that a `git clean` or a second clone is
+// not a month of sessions gone. Next to the app is only the fallback, which is
+// what the full product on its own store runs on.
 const root = process.env.CODERVIBES_DATA_DIR ?? path.join(here, "..", "..");
 
 const REPOS_FILE = path.join(root, ".codervibes-repos.json");

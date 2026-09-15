@@ -454,7 +454,13 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
         metric(counted.shipped, "shipped", "merged and deployed"),
         metric(counted.reverted, "reverted", "taken back out, or it broke the build"),
         metric(wasted, "bought nothing", `${counted.closed} closed · ${counted.discarded} discarded`),
-        metric(money(waste) ?? "—", "spent on work that never landed", spend > 0 ? `${Math.round((waste / spend) * 100)}% of the range's spend` : null),
+        // Nothing wasted reads as an em dash, the way the tile beside it
+        // says "nothing measured yet". `money` renders nought as "<1¢" -
+        // right for a real cost too small to name, and wrong here, where
+        // it made a range in which everything landed say "<1¢ spent on
+        // work that never landed" and read like a rounding error rather
+        // than like a clean week.
+        metric(waste ? money(waste) : "—", "spent on work that never landed", spend > 0 && waste ? `${Math.round((waste / spend) * 100)}% of the range's spend` : null),
         metric(kept == null ? "—" : percent(kept), "kept after 30 days", compare.aftermath?.measured ? `over ${compare.aftermath.measured} measured` : "nothing old enough yet"),
       ),
     );
@@ -740,7 +746,14 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
           ? "A session recorded before this app counted turns has no steering count at all, so Steering and First time read \"not measured\" for it - a nought nobody counted is not a nought."
           : "A session recorded before this app counted turns has no steering count at all, so Steering reads \"not measured\" for it - a nought nobody counted is not a nought."
         : null,
-      "Kept in review is, of the lines a row's sessions wrote, how many were in the diff that merged - matched line by line, so a line a person rewrote is not the agent's. Undone after is, of the pull requests a row landed, how many were reverted, broke the build or had a fix come back within a month. Kept 30d is how much of a merge's added lines are still in the file thirty days on - see docs/measures.md.",
+      // The three aftermath figures, defined here rather than pointed at.
+      // docs/measures.md is where they are written out at length, and it is
+      // a file of this repository that the open-source cut does not carry
+      // (scripts/cut-local.mjs takes docs/local.md and nothing else), so a
+      // person reading this sentence there was being sent to a path their
+      // checkout has not got. A caveat that names no file is true in both
+      // editions.
+      "Kept in review is, of the lines a row's sessions wrote, how many were in the diff that merged - matched line by line, so a line a person rewrote is not the agent's. Undone after is, of the pull requests a row landed, how many were reverted, broke the build or had a fix come back within a month. Kept 30d is how much of a merge's added lines are still in the file thirty days on.",
       shown.some((row) => !row.linesMeasured)
         ? "A harness whose hooks send no tool input - Codex's do not - writes lines nothing here can count, so its row reads \"not measured\" rather than nought."
         : null,

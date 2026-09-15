@@ -9,14 +9,16 @@ cost and how long you spent waiting on it - and puts it on five pages you
 can open in a browser.
 
 It runs on your laptop, answers on your laptop, and stores its records in
-a directory beside the checkout. There is no sign-in because there is
-nobody else: it refuses any request that did not come from this machine.
+`~/.codervibes/data` - beside your home directory rather than beside the
+checkout, so a `git clean` or a second clone is not a month of work gone.
+There is no sign-in because there is nobody else: it refuses any request
+that did not come from this machine.
 
 ## Start it
 
 ```sh
-git clone https://github.com/codervibes/codervibes-local
-cd codervibes-local
+git clone https://github.com/codervibes-io/codervibes
+cd codervibes
 npm install
 npm start
 ```
@@ -95,10 +97,10 @@ now; nothing is asked of a host you have not connected.
 | Variable | What it does |
 |---|---|
 | `PORT` | the port to listen on (default 3592) |
-| `CODERVIBES_DATA_DIR` | where the records are written (default: the checkout) |
+| `CODERVIBES_DATA_DIR` | where the records are written (default: `~/.codervibes/data`) |
 | `CODERVIBES_MAX_EXECUTORS` | how many machines may report here (default 3) |
 | `ANTHROPIC_API_KEY` | enables Explain on the Search page, and semantic matching |
-| `LITELLM_URL`, `LITELLM_KEY` | use a proxy for the above instead of a key |
+| `LITELLM_BASE_URL`, `LITELLM_API_KEY` | use a proxy for the above instead of a key |
 | `CODERVIBES_TOKEN_SECRET` | encrypts a connected git host's token where it is written |
 
 Nothing here reaches the network unless you set one of the model

@@ -357,10 +357,22 @@ chmod 755 "$CV/ship"
 
 # The shell reads the variables too, so a harness with no config file of its
 # own - or a tool that only knows the standard variables - still exports.
+#
+# A person's shell startup file is the one file here they did not ask us to
+# touch and the one they will not think to look in, so what happened to it is
+# kept and said in the summary below beside everything else that was written.
+# A line appended without a word about it is the sort of thing somebody finds
+# months later and cannot date.
+RC_WROTE=""
+RC_HAD=""
 for rc in "$HOME_DIR/.profile" "$HOME_DIR/.bashrc" "$HOME_DIR/.zshrc"; do
   [ -f "$rc" ] || continue
-  grep -q '\\.codervibes/env' "$rc" 2>/dev/null && continue
+  if grep -q '\\.codervibes/env' "$rc" 2>/dev/null; then
+    RC_HAD="$RC_HAD\${RC_HAD:+, }$rc"
+    continue
+  fi
   printf '\\n# CoderVibes: the coding agents here report to %s\\n[ -f "$HOME/.codervibes/env" ] && . "$HOME/.codervibes/env"\\n' "$ORIGIN" >> "$rc"
+  RC_WROTE="$RC_WROTE\${RC_WROTE:+, }$rc"
 done
 
 # JSON merging, for the two harnesses whose settings file may already hold
@@ -413,16 +425,38 @@ PY
   fi
 }
 
+# Whether a harness is actually on this machine. The config files below are
+# written either way - one installed next week should just work, without
+# anybody having to remember to run this line again - but a summary that says
+# "Gemini CLI: wrote ~/.gemini/settings.json" on a machine with no Gemini CLI
+# reads as if something was set up that was not, which is the opposite of what
+# the Executors page promises when it says this works out what is installed.
+# So each line carries which of the two it was. Same probe as the report at
+# the end of the script, run once here and used by both.
+harness_note() {
+  if command -v "$1" >/dev/null 2>&1; then
+    printf ' (installed)'
+  else
+    printf ' (not installed here - takes effect if you install it)'
+  fi
+}
+NOTE_CLAUDE="$(harness_note claude)"
+NOTE_CODEX="$(harness_note codex)"
+NOTE_GEMINI="$(harness_note gemini)"
+NOTE_OPENCODE="$(harness_note opencode)"
+
 # Writes \`ours\` as the file when it is absent, merges when it exists and an
-# interpreter is here, and otherwise leaves it and says what to add.
+# interpreter is here, and otherwise leaves it and says what to add. The
+# fourth argument is the harness's note above, empty for what is nobody's
+# harness in particular.
 settle_json() {
-  file="$1"; ours="$2"; who="$3"
+  file="$1"; ours="$2"; who="$3"; note="\${4:-}"
   mkdir -p "$(dirname "$file")"
   if [ ! -s "$file" ]; then
     printf '%s\\n' "$ours" > "$file"
-    echo "  $who: wrote $file"
+    echo "  $who: wrote $file$note"
   elif merge_json "$file" "$ours"; then
-    echo "  $who: merged into $file"
+    echo "  $who: merged into $file$note"
   else
     echo "  $who: $file exists and there is no node or python3 to merge with. Add this to it by hand:" >&2
     printf '%s\\n' "$ours" >&2
@@ -468,11 +502,11 @@ ${withToken(`    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer $TOKEN",`)}
   }
 }
 EOF
-)" "Claude Code"
+)" "Claude Code" "$NOTE_CLAUDE"
 ${withMcp(`# Its MCP servers live in ~/.claude.json, not in settings.json - the file
 # \`claude mcp add --scope user\` writes to - so the server goes there, in
 # the shape that command writes, beside whatever else the file holds.
-settle_json "$HOME_DIR/.claude.json" "$(mcp_block)" "Claude Code MCP"`)}
+settle_json "$HOME_DIR/.claude.json" "$(mcp_block)" "Claude Code MCP" "$NOTE_CLAUDE"`)}
 # ------------------------------------------------------------------ Codex
 # An [otel] table in config.toml; the endpoint is the whole logs path, since
 # its exporter does not append one. Prompts are exported, like Claude Code's.
@@ -482,7 +516,7 @@ CODEX="$HOME_DIR/.codex/config.toml"
 mkdir -p "$HOME_DIR/.codex"
 if [ -f "$CODEX" ] && grep -q '^\\[otel\\]' "$CODEX" 2>/dev/null; then
   if grep -q "$ORIGIN/otlp/v1/logs" "$CODEX"; then
-    echo "  Codex: $CODEX already has this app's [otel] table"
+    echo "  Codex: $CODEX already has this app's [otel] table$NOTE_CODEX"
   else
     echo "  Codex: $CODEX has an [otel] table of its own; not touched. To report here, point it at $ORIGIN/otlp/v1/logs${tokenless ? "" : " with the header in ~/.codervibes/env"}." >&2
   fi
@@ -494,7 +528,7 @@ else
 log_user_prompt = true
 exporter = { otlp-http = { endpoint = "$ORIGIN/otlp/v1/logs", protocol = "json"${tokenless ? "" : `, headers = { Authorization = "Bearer $TOKEN" }`} } }
 EOF
-  echo "  Codex: added [otel] to $CODEX"
+  echo "  Codex: added [otel] to $CODEX$NOTE_CODEX"
 fi
 ${withMcp(`# Its MCP servers are tables in the same file. Ours is replaced on every
 # run - the token in it may have been rotated - by cutting the table from
@@ -508,7 +542,7 @@ cat >> "$CODEX" <<EOF
 [mcp_servers.codervibes]
 url = "$MCP_URL"
 ${tokenless ? "" : `http_headers = { Authorization = "Bearer $TOKEN" }\n`}EOF
-echo "  Codex: MCP server codervibes in $CODEX"`)}settle_json "$HOME_DIR/.codex/hooks.json" "$(cat <<EOF
+echo "  Codex: MCP server codervibes in $CODEX$NOTE_CODEX"`)}settle_json "$HOME_DIR/.codex/hooks.json" "$(cat <<EOF
 {
   "hooks": {
     "SessionStart": [$(hook start)],
@@ -516,7 +550,7 @@ echo "  Codex: MCP server codervibes in $CODEX"`)}settle_json "$HOME_DIR/.codex/
   }
 }
 EOF
-)" "Codex hooks"
+)" "Codex hooks" "$NOTE_CODEX"
 
 # ------------------------------------------------------------- Gemini CLI
 # Its telemetry block names the endpoint, which it appends /v1/logs to
@@ -543,12 +577,12 @@ ${mcp ? `  },
   }` : `  }`}
 }
 EOF
-)" "Gemini CLI"
+)" "Gemini CLI" "$NOTE_GEMINI"
 ${withMcp(`
 # --------------------------------------------------------------- OpenCode
 # No telemetry export to point here; it reads the \`mcp\` block of its own
 # config for the tools. Its providers and its model are left as they are.
-settle_json "$HOME_DIR/.config/opencode/opencode.json" "$(printf '${tokenless ? `{"mcp":{"codervibes":{"type":"remote","url":"%s"}}}' "$MCP_URL"` : `{"mcp":{"codervibes":{"type":"remote","url":"%s","headers":{"Authorization":"Bearer %s"}}}}' "$MCP_URL" "$TOKEN"`})" "OpenCode"
+settle_json "$HOME_DIR/.config/opencode/opencode.json" "$(printf '${tokenless ? `{"mcp":{"codervibes":{"type":"remote","url":"%s"}}}' "$MCP_URL"` : `{"mcp":{"codervibes":{"type":"remote","url":"%s","headers":{"Authorization":"Bearer %s"}}}}' "$MCP_URL" "$TOKEN"`})" "OpenCode" "$NOTE_OPENCODE"
 
 # ------------------------------------------------------------------ Cursor
 # No telemetry export of its own to point here, but it reads the common
@@ -557,10 +591,20 @@ settle_json "$HOME_DIR/.config/opencode/opencode.json" "$(printf '${tokenless ? 
 if [ -d "$HOME_DIR/.cursor" ]; then
   settle_json "$HOME_DIR/.cursor/mcp.json" "$(mcp_block)" "Cursor MCP"
 fi`)}
+# ------------------------------------------------------------- the shell
+# Said last, with the files: two lines in a startup file is the change a
+# person is least likely to have expected and most likely to want to find
+# again, and every other file this wrote has a line of its own above.
+[ -n "$RC_WROTE" ] && echo "  Shell: added two lines sourcing ~/.codervibes/env to $RC_WROTE"
+[ -n "$RC_HAD" ] && echo "  Shell: $RC_HAD already sources ~/.codervibes/env; left as it is"
+
 # ----------------------------------------------------- tell the server
 
 # Which harnesses are actually here - the files above are written either
-# way - so the machine's row can say what runs on it.
+# way, and each said which it was - so the machine's row can say what runs
+# on it. The same probe as harness_note above; a harness installed between
+# the two would be reported here and noted as absent there, which is a
+# second of skew nobody will see and a lie nothing acts on.
 HERE=""
 for tool in claude codex gemini opencode; do
   command -v "$tool" >/dev/null 2>&1 && HERE="$HERE\${HERE:+,}\\"$tool\\""

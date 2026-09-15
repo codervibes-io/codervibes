@@ -18,7 +18,7 @@ worked with them, and what became of the work.
 ## Running it
 
 ```sh
-git clone https://github.com/<you>/codervibes
+git clone https://github.com/codervibes-io/codervibes
 cd codervibes && npm install
 npm start
 ```
@@ -124,10 +124,10 @@ Until you connect one, nothing on a timer reaches the network at all.
 |---|---|---|
 | `PORT` | the port to listen on; it binds to loopback and nothing else | 3592 |
 | `CODERVIBES_TOKEN_SECRET` | encrypts a connected git host's token where it is written | unset; the token is kept as it is |
-| `CODERVIBES_DATA_DIR` | the directory the `.codervibes-*.json` documents are written to | the checkout itself |
+| `CODERVIBES_DATA_DIR` | the directory the `.codervibes-*.json` documents are written to | `~/.codervibes/data` - beside your home directory, not beside the checkout, so a `git clean` or a second clone does not take the records with it |
 | `CODERVIBES_MAX_EXECUTORS` | how many machines may be seated at once | 3 |
 | `ANTHROPIC_API_KEY` | a key for Explain on the Search page | unset; Explain is off without one |
-| `LITELLM_URL`, `LITELLM_KEY` | a proxy to reach a model and an embeddings model through, instead of the key above | unset |
+| `LITELLM_BASE_URL`, `LITELLM_API_KEY` | a proxy to reach a model and an embeddings model through, instead of the key above - the address ends in `/v1` | unset |
 
 The model variables are the only ones that reach the network, and only
 when you set them: without a model, Search still works - the keyword half
@@ -167,6 +167,20 @@ comes back if it connects again and there is room.
 Three is `CODERVIBES_MAX_EXECUTORS`, so raise it if a laptop, a desktop
 and two sandboxes is what your week actually looks like.
 
+## Carrying a session on
+
+Open a session - from Search, or from a machine's page - and there is a
+**Reconnect** button under the links at the top. It opens a dialog holding
+the line that picks the conversation up where it stopped (`claude --resume
+<id>` for Claude Code, its own for Codex and OpenCode) and, beside it, the
+session id on its own with a Copy button, for a harness this app has no
+line to type. Two things the dialog says, because both are how this goes
+wrong: run it **on the machine the work was done on** - the harness files
+the conversation there and the id means nothing anywhere else - and
+reconnecting to a session that is still live *follows* the conversation
+rather than taking it over. The button is there only when the harness has
+told us an id it would recognise.
+
 ## What it cannot do
 
 **Performance counts opened pull requests until you connect a git host.**
@@ -182,6 +196,9 @@ wrote last time, so running the hosted product's line and then the local
 one points the machine at the local one, and vice versa. Pick one per
 machine, or accept that the last line you ran is the one that is reporting.
 
-**Nothing is shared and nothing is backed up.** The store is files under
-`CODERVIBES_DATA_DIR`. Back that directory up if what is in it matters,
-because nothing else will.
+**Nothing is shared and nothing is backed up.** The store is the
+`.codervibes-*.json` files in `~/.codervibes/data`, or wherever
+`CODERVIBES_DATA_DIR` points instead - `npm start` prints the directory it
+settled on. Back *that* directory up if what is in it matters, because
+nothing else will; it is not under the checkout, so backing the checkout up
+backs none of it up.

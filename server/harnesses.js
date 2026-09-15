@@ -42,7 +42,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { read as readRow, patch as patchRow } from "./user-record.js";
 import { setupCommand } from "./setup-script.js";
-import { litellmCommand } from "./litellm-setup-script.js";
+import { litellmCommand } from "./litellm-command.js";
 import { funName } from "./agent-names.js";
 
 export class HarnessError extends Error {
