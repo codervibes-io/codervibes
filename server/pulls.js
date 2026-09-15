@@ -214,10 +214,12 @@ async function load(repo, number, host = "github") {
   const id = idOf(repo, number, host);
   const known = recent.get(id);
   if (known) return known;
-  // The id as well as the pair: the json store keys its file by the
-  // record's own id, and a GitLab record and a GitHub one can be the same
-  // repository path and the same number.
-  const stored = store.loadPull ? await store.loadPull(repo, Number(number), id) : null;
+  // The id and the host as well as the pair: a GitLab record and a GitHub
+  // one can be the same repository path and the same number, and neither
+  // backend can key by the pair alone. The json store writes under the
+  // record's own id; the dynamo one puts the host in front of the
+  // partition key (dynamo-store.js `keyedRepo`).
+  const stored = store.loadPull ? await store.loadPull(repo, Number(number), id, host) : null;
   if (stored) remember(stored);
   return stored;
 }
@@ -920,17 +922,20 @@ export async function get(repo, number, host = "github") {
 }
 
 /** Pull requests, newest activity first. */
-export async function list({ repo = null, repoId = null, since = 0, limit = 100 } = {}) {
+export async function list({ repo = null, repoId = null, host = null, since = 0, limit = 100 } = {}) {
   const seen = new Map();
   for (const record of recent.values()) {
     if (repo && record.repo !== repo) continue;
+    // A repository path is only unique within a host, so a caller that
+    // named one and means a particular host says which.
+    if (host && (record.host ?? "github") !== host) continue;
     if (repoId && record.repoId !== repoId) continue;
     if (record.updatedAt < since) continue;
     seen.set(record.id, record);
   }
   if (store.loadPulls) {
     try {
-      for (const record of await store.loadPulls({ repo, repoId, since, limit })) {
+      for (const record of await store.loadPulls({ repo, repoId, host, since, limit })) {
         if (!seen.has(record.id)) seen.set(record.id, record);
       }
     } catch (err) {

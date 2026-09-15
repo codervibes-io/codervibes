@@ -29,16 +29,31 @@ const credentialOf = (credential) => (typeof credential === "string" ? { token: 
 
 /** Why this is not a GitLab token, or null when it might be. */
 export function whyNotAToken(credential) {
-  const token = String(credentialOf(credential).token ?? "").trim();
+  const { token: held, bearer } = credentialOf(credential);
+  const token = String(held ?? "").trim();
   if (!token) return "Paste a GitLab personal access token.";
+  // A grant from a sign-in is whatever GitLab issued it as, and there is no
+  // shape to hold it to: it was got by asking GitLab, not by typing.
+  if (bearer) return null;
   if (!token.startsWith("glpat-")) return "That does not look like a GitLab token - a personal access token begins with glpat-.";
   return null;
 }
 
-// PRIVATE-TOKEN rather than a bearer: it is the header GitLab documents for
-// a personal access token, and the one a self-hosted instance behind a
-// reverse proxy is least likely to have taken for its own.
-const auth = (credential) => ({ "PRIVATE-TOKEN": String(credentialOf(credential).token ?? "").trim() });
+// PRIVATE-TOKEN rather than a bearer, for a personal access token: it is the
+// header GitLab documents for one, and the one a self-hosted instance behind
+// a reverse proxy is least likely to have taken for its own.
+//
+// A token somebody signed in for is the other case, and it is a bearer and
+// nothing else - GitLab does not take an OAuth token in PRIVATE-TOKEN. The
+// prefix is what tells the two apart without anybody having to say: every
+// personal access token GitLab issues begins `glpat-`, and no grant does.
+// (Linear's connector reads its two the same way.)
+const auth = (credential) => {
+  const { token, bearer } = credentialOf(credential);
+  const value = String(token ?? "").trim();
+  if (bearer || !value.startsWith("glpat-")) return { Authorization: `Bearer ${value}` };
+  return { "PRIVATE-TOKEN": value };
+};
 
 const host = { id, label, hint };
 

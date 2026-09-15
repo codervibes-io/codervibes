@@ -277,16 +277,21 @@ export class JsonStore {
   // Keyed by the record's own id, which is what `putPull` writes it under.
   // A caller that knows the id hands it over (pulls.js `idOf`, which
   // prefixes every host but GitHub); one that does not is asking about
-  // GitHub, which is what the pair alone has always meant.
-  async loadPull(repo, number, id = `${repo}#${number}`) {
+  // GitHub, which is what the pair alone has always meant. The host comes
+  // with it and is not needed here - the id already carries it - but the
+  // dynamo backend's key is built from it, and the two signatures are one.
+  async loadPull(repo, number, id = `${repo}#${number}`, host = null) {
     return (await readJson(PULLS_FILE))?.pulls?.[id] ?? null;
   }
 
   /** One repository's, one repo's, or everybody's since a moment; most recently updated first. */
-  async loadPulls({ repo = null, repoId = null, since = 0, limit = 200 } = {}) {
+  async loadPulls({ repo = null, repoId = null, host = null, since = 0, limit = 200 } = {}) {
     const pulls = Object.values((await readJson(PULLS_FILE))?.pulls ?? {});
     return pulls
       .filter((pull) => (repo ? pull.repo === repo : repoId ? pull.repoId === repoId : true))
+      // A repository path means one thing per host, so a listing that named
+      // one is asking about that host's records and not the other two's.
+      .filter((pull) => !host || (pull.host ?? "github") === host)
       .filter((pull) => (pull.updatedAt ?? 0) >= since)
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
       .slice(0, limit);

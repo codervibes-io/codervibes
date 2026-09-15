@@ -20,6 +20,10 @@ export function fakeBitbucket() {
     requests: [],
     pullReads: [],
     listings: [],
+    /** A token somebody signed in for: a bearer, with no username half at all. */
+    oauthToken: "bb-oauth-token",
+    /** Every exchange at the token endpoint, with the form it carried. */
+    exchanges: [],
   };
 
   /** Add one, in Bitbucket's own JSON. `state` is its own word: OPEN, MERGED, DECLINED, SUPERSEDED. */
@@ -63,11 +67,41 @@ export function fakeBitbucket() {
     const url = new URL(req.url, "http://fake");
     state.requests.push(`${req.method} ${url.pathname}`);
 
-    // Basic, as Bitbucket takes it: both halves, or its own words back.
+    // The sign-in's token endpoint, which is on bitbucket.org rather than
+    // on the API and carries the client's id and secret in the form.
+    // Before the gate below, for that reason.
+    if (req.method === "POST" && url.pathname === "/site/oauth2/access_token") {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        const form = Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString("utf8")));
+        state.exchanges.push(form);
+        if (form.client_secret !== "bb-client-secret") {
+          return json(res, 400, { error: "unauthorized_client", error_description: "Client credentials are invalid." });
+        }
+        if (form.grant_type === "authorization_code" && form.code !== "bb-good-code") {
+          return json(res, 400, { error: "invalid_grant", error_description: "The authorization code is invalid." });
+        }
+        // Two hours, with a refresh token: Bitbucket's own lifetimes.
+        return json(res, 200, {
+          access_token: state.oauthToken,
+          token_type: "bearer",
+          refresh_token: "bb-refresh",
+          expires_in: 7200,
+          scopes: "pullrequest account",
+        });
+      });
+      return undefined;
+    }
+
+    // Basic, as Bitbucket takes it: both halves, or its own words back. A
+    // token from a sign-in is a bearer instead, and carries no username -
+    // which is the half of this the cloud has to get right.
     const header = String(req.headers.authorization ?? "");
     const pair = header.startsWith("Basic ") ? Buffer.from(header.slice(6), "base64").toString("utf8") : "";
     const [username, token] = pair.split(":");
-    if (username !== state.username || token !== state.token) {
+    const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
+    if (!(bearer && bearer === state.oauthToken) && (username !== state.username || token !== state.token)) {
       return json(res, 401, { type: "error", error: { message: "Invalid credentials" } });
     }
 
@@ -99,10 +133,19 @@ export function fakeBitbucket() {
   return { state, server };
 }
 
-/** Start one, point the git host at it, and hand back the state. */
+/**
+ * Start one, point the git host at it, and hand back the state.
+ *
+ * `web` is where the sign-in's two endpoints are - the connector reads it
+ * at import, so a test that wants them sets CODERVIBES_BITBUCKET_WEB from
+ * this before importing the connector.
+ */
 export async function startFakeBitbucket() {
   const bitbucket = fakeBitbucket();
   await new Promise((resolve) => bitbucket.server.listen(0, "127.0.0.1", resolve));
-  process.env.CODERVIBES_BITBUCKET_API = `http://127.0.0.1:${bitbucket.server.address().port}`;
+  const origin = `http://127.0.0.1:${bitbucket.server.address().port}`;
+  process.env.CODERVIBES_BITBUCKET_API = origin;
+  bitbucket.origin = origin;
+  bitbucket.web = origin;
   return bitbucket;
 }

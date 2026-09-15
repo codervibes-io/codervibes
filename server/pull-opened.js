@@ -52,6 +52,24 @@ import { refreshPull } from "./git-hosts/sync.js";
 // shape (`/pull-requests/<n>`) is specific enough that nothing else on a
 // line is one.
 
+/**
+ * Where this edition keeps a person's git host tokens.
+ *
+ * The local one by default - a field on the owner's row - because that is
+ * the edition this was written for and the one whose entry file does not
+ * run. The cloud's is a reading of the connectors somebody signed in to
+ * (git-hosts/cloud-credentials.js), and index.js hands it in at boot rather
+ * than this importing it: connectors/ is on the local edition's deny list
+ * whole, so an import here would take the whole connector machinery into
+ * the cut.
+ */
+let theirCredentials = gitHostCredentials;
+
+/** Use these instead. Called once, at boot, by whichever entry file is running. */
+export function useCredentials(adapter) {
+  theirCredentials = adapter ?? gitHostCredentials;
+}
+
 /** A pull request's URL on GitHub, wherever it is in a line. */
 export const PULL_URL = /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)\b/;
 
@@ -142,7 +160,8 @@ export function filedFor(fullName, owner, host = "github") {
  * needs a GitHub App and the local edition has none. Noting a pull request
  * is the hook's business and needs neither.
  */
-async function askTheHost(record, { session = null, credentials = gitHostCredentials } = {}) {
+async function askTheHost(record, { session = null, credentials = null } = {}) {
+  credentials = credentials ?? theirCredentials;
   const user = session?.owner ?? null;
   if (user) {
     const mine = await refreshPull(record, { user, credentials }).catch(() => null);
@@ -174,7 +193,7 @@ async function askTheHost(record, { session = null, credentials = gitHostCredent
  * @param {string|null} [args.taskId] the task the session holds
  * @returns {Promise<{record: object, current: object, asked: boolean}>} the record as noted, and as GitHub says it stands
  */
-export async function opened({ repo, number, host = "github", url = null, title = null, branch = null, filedUnder = null, session = null, agent = null, taskId = null, credentials = gitHostCredentials }) {
+export async function opened({ repo, number, host = "github", url = null, title = null, branch = null, filedUnder = null, session = null, agent = null, taskId = null, credentials = null }) {
   const under = filedUnder ?? filedFor(repo, session?.owner ?? null, host);
   const record = await pulls.noteOpened({
     repoId: under?.id ?? null,

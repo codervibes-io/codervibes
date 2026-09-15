@@ -23,6 +23,10 @@ export function fakeGitLab() {
     pullReads: [],
     /** Every listing, with the query it carried. */
     listings: [],
+    /** A token somebody signed in for, which GitLab takes as a bearer and not in PRIVATE-TOKEN. */
+    oauthToken: "gl-oauth-token",
+    /** Every exchange at the token endpoint, with the form it carried. */
+    exchanges: [],
   };
 
   /**
@@ -80,8 +84,39 @@ export function fakeGitLab() {
     const url = new URL(req.url, "http://fake");
     state.requests.push(`${req.method} ${url.pathname}`);
 
-    // GitLab's own words for a token it does not know.
-    if (req.headers["private-token"] !== state.token) {
+    // The sign-in's token endpoint, which is on gitlab.com rather than on
+    // the API and carries no credential of its own - the client's id and
+    // secret are in the form. Before the gate below, for that reason.
+    if (req.method === "POST" && url.pathname === "/oauth/token") {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        const form = Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString("utf8")));
+        state.exchanges.push(form);
+        if (form.client_secret !== "gl-client-secret") {
+          return json(res, 401, { error: "invalid_client", error_description: "Client authentication failed." });
+        }
+        if (form.grant_type === "authorization_code" && form.code !== "gl-good-code") {
+          return json(res, 400, { error: "invalid_grant", error_description: "The provided authorization grant is invalid." });
+        }
+        // Two hours, with a refresh token: GitLab's own lifetimes.
+        return json(res, 200, {
+          access_token: state.oauthToken,
+          token_type: "bearer",
+          refresh_token: "gl-refresh",
+          expires_in: 7200,
+          scope: "read_api read_user",
+        });
+      });
+      return undefined;
+    }
+
+    // GitLab's own words for a token it does not know. A personal access
+    // token comes in PRIVATE-TOKEN; one from a sign-in is a bearer, and
+    // GitLab takes it in that header only - which is the thing worth having
+    // a real server for.
+    const bearer = String(req.headers.authorization ?? "").replace(/^Bearer /, "");
+    if (req.headers["private-token"] !== state.token && bearer !== state.oauthToken) {
       return json(res, 401, { message: "401 Unauthorized" });
     }
 
@@ -120,10 +155,19 @@ export function fakeGitLab() {
   return { state, server };
 }
 
-/** Start one, point the git host at it, and hand back the state. */
+/**
+ * Start one, point the git host at it, and hand back the state.
+ *
+ * `web` is where the sign-in's two endpoints are - the connector reads it
+ * at import, so a test that wants them sets CODERVIBES_GITLAB_WEB from this
+ * before importing the connector.
+ */
 export async function startFakeGitLab() {
   const gitlab = fakeGitLab();
   await new Promise((resolve) => gitlab.server.listen(0, "127.0.0.1", resolve));
-  process.env.CODERVIBES_GITLAB_API = `http://127.0.0.1:${gitlab.server.address().port}/api/v4`;
+  const origin = `http://127.0.0.1:${gitlab.server.address().port}`;
+  process.env.CODERVIBES_GITLAB_API = `${origin}/api/v4`;
+  gitlab.origin = origin;
+  gitlab.web = origin;
   return gitlab;
 }

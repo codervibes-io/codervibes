@@ -152,7 +152,9 @@ export async function sweep(user, { credentials = localCredentials, since = Date
  */
 export function start({ users = () => [], credentials = localCredentials, everyMs = EVERY_MS, sweepAfterMs = 20_000 } = {}) {
   const round = async () => {
-    for (const user of users()) {
+    // Awaited: the local edition's answer is one name it already has, and
+    // the cloud's is a read of everybody who connected one of the three.
+    for (const user of (await users()) ?? []) {
       await sweep(user, { credentials }).catch((err) => console.warn(`git-hosts: sweeping ${user}: ${err.message}`));
     }
   };
