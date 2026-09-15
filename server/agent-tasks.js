@@ -301,9 +301,24 @@ export function workingOn(registry, agentId) {
 export function reportsFor(registry, agentId, { since = 0 } = {}) {
   const id = String(agentId);
   const settled = (task) => (task.settledAt ? Date.parse(task.settledAt) : NaN);
-  return tasksFor(registry, id, { role: "from" })
-    .filter((task) => !LIVE.has(task.state) && settled(task) > since && task.settledBy !== id)
-    .sort((a, b) => settled(a) - settled(b))
+  // Oldest settle first, and the order is total. `settledAt` is a
+  // millisecond and two pieces of one parent routinely close inside one, so
+  // the tie decides the ordinary case rather than a corner - and it used to
+  // fall through to whatever order `tasksFor` had left, which is newest
+  // *created* first. So a lead that handed out two pieces read them back in
+  // the order it sent them or the reverse depending on whether their
+  // creation straddled a millisecond: the same code, either way, run to run.
+  // Read from `allTasks` instead, which is the order the tasks were made in,
+  // and keep that as the tie-break; a wrong-way-round pair of reports is a
+  // real answer to the lead, not only a flaky test.
+  const everything = allTasks(registry);
+  const made = new Map(everything.map((task, at) => [task.id, at]));
+  return everything
+    .filter(
+      (task) =>
+        task.from.id === id && !LIVE.has(task.state) && settled(task) > since && task.settledBy !== id,
+    )
+    .sort((a, b) => settled(a) - settled(b) || made.get(a.id) - made.get(b.id))
     .map((task) => {
       const repo = registry.repos.get(task.repoId);
       const parent = task.parentId

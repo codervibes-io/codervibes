@@ -16,6 +16,18 @@ that did not come from this machine.
 
 ## Start it
 
+One line, on the machine whose agents you want to watch:
+
+```sh
+curl -fsSL https://codervibes.io/local.sh | sh
+```
+
+It asks before each step, and running it again is how you update
+(`--yes` answers everything; `--dir`, `--port`, `--no-setup`, `--no-start`
+if you need them).
+
+By hand, which is the same thing in four steps:
+
 ```sh
 git clone https://github.com/codervibes-io/codervibes
 cd codervibes

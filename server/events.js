@@ -216,7 +216,15 @@ let lastFollowed = null;
 export function follow({ everyMs = FOLLOW_MS } = {}) {
   if (!everyMs || following || !store.loadEvents) return () => {};
   lastFollowed = idFor(Date.now(), 0);
+  // One read at a time. The cursor only moves once the read comes back, so a
+  // read that takes longer than `everyMs` - a DynamoDB query on a busy
+  // machine does - used to have the next tick start from the same place and
+  // deliver the same events again: a chat line appearing twice in the
+  // console, from nothing worse than the store being slow for a moment.
+  let reading = false;
   const tick = async () => {
+    if (reading) return;
+    reading = true;
     try {
       const events = await store.loadEvents(lastFollowed, { limit: 500 });
       for (const event of events) {
@@ -228,6 +236,8 @@ export function follow({ everyMs = FOLLOW_MS } = {}) {
       }
     } catch (err) {
       console.warn(`events: could not follow the store: ${err.message}`);
+    } finally {
+      reading = false;
     }
   };
   following = setInterval(tick, everyMs);

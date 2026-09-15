@@ -18,13 +18,23 @@ process.env.CODERVIBES_STORE = "json";
 const { withSpan, retroSpan } = await import("../server/telemetry.js");
 const spans = await import("../server/spans.js");
 const { store } = await import("../server/store/index.js");
-const { RING_SIZE, BATCH_SIZE, KEEP_MS, spanInternals } = spans;
+const { RING_SIZE, BATCH_SIZE, FLUSH_MS, KEEP_MS, spanInternals } = spans;
 
 test.beforeEach(async () => {
   spanInternals.reset();
   await fs.rm(path.join(dataDir, ".codervibes-spans.json"), { force: true });
 });
 test.after(() => fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+
+/** Poll until it is true, rather than sleep for as long as it took once. */
+async function eventually(what, check, { within = 5_000 } = {}) {
+  const deadline = Date.now() + within;
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() > deadline) throw new Error(`waited ${within}ms for ${what}, and it did not happen`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 /** One finished span, with the ids a page reads by. */
 const emit = (attrs = {}, { at = Date.now(), ms = 10 } = {}) =>
@@ -46,10 +56,16 @@ test("a finished span is in memory at once, and in the store a moment later", as
 test("a batch is written when it fills, without waiting for the timer", async () => {
   const now = Date.now();
   for (let i = 0; i < BATCH_SIZE; i += 1) emit({ "cv.session.id": "ses_full" }, { at: now + i });
-  // The write is in flight, not waited for; give it a tick.
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The write is in flight, not waited for. A fixed tick is a race with
+  // whatever else is queued on the store - 50ms was not always enough under
+  // the whole suite - so poll, and poll for less than the timer, because the
+  // point of the test is that the batch went out without it.
+  await eventually(
+    "the full batch to go out on its own",
+    async () => (await store.loadSpans({ session: "ses_full", limit: 1000 })).length === BATCH_SIZE,
+    { within: FLUSH_MS / 2 },
+  );
   assert.equal(spanInternals.pending().length, 0, "the full batch went out on its own");
-  assert.equal((await store.loadSpans({ session: "ses_full", limit: 1000 })).length, BATCH_SIZE);
 });
 
 test("memory holds the last few thousand and no more", () => {

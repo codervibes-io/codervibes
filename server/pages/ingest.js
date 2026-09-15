@@ -5,6 +5,14 @@
 // of connecting one is a file and a token - `/setup.sh`, which is public
 // because it holds no secret, and the token, which is the account's.
 //
+// `/local.sh` is the other public script, and the other direction: it does
+// not connect a machine to this installation, it puts an installation of the
+// open-source edition on the reader's own machine and starts it
+// (server/local-install-script.js). It lives beside `/setup.sh` because the
+// two are the same kind of thing - a file anybody may fetch, holding no
+// secret - and because the first thing it does after starting that
+// installation is run the installation's own `/setup.sh`.
+//
 // `/healthz` is here too, for want of anywhere better: it is the other route
 // that answers before anybody has signed in, and it says nothing about any
 // store on purpose - a health check that reads the database turns a slow
@@ -12,6 +20,7 @@
 import * as ingestToken from "../ingest-token.js";
 import * as harnesses from "../harnesses.js";
 import { setupScript } from "../setup-script.js";
+import { localInstallScript } from "../local-install-script.js";
 import { publicOrigin } from "../public-url.js";
 
 export function mount(app, scope) {
@@ -37,6 +46,19 @@ export function mount(app, scope) {
     res.type("text/x-shellscript; charset=utf-8");
     res.set("Cache-Control", "public, max-age=300");
     res.send(setupScript({ origin: publicOrigin(req), ...scope.setup }));
+  });
+
+  // The other script: `curl -fsSL <origin>/local.sh | sh` puts the
+  // open-source edition on the reader's own machine and starts it
+  // (server/local-install-script.js). Served by both editions from here, on
+  // purpose - the hosted site prints the line on its front page, and a local
+  // installation somebody already has is the likeliest place a colleague is
+  // handed it from. What it installs is the same in either case: the
+  // published repository, not this installation's own code.
+  app.get("/local.sh", (req, res) => {
+    res.type("text/x-shellscript; charset=utf-8");
+    res.set("Cache-Control", "public, max-age=300");
+    res.send(localInstallScript());
   });
 
   /**

@@ -25,6 +25,22 @@ test.after(async () => {
 });
 test.beforeEach(() => events.reset());
 
+/**
+ * Poll until it is true, rather than sleep for as long as it took once.
+ *
+ * Everything worth waiting for here lands on a tick of the follower or on a
+ * store write nobody awaited, and how long either takes is whatever the
+ * machine is doing - see the `codervibes-qa` skill.
+ */
+async function eventually(what, check, { within = 10_000 } = {}) {
+  const deadline = Date.now() + within;
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() > deadline) throw new Error(`waited ${within}ms for ${what}, and it did not happen`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 test("an event is heard by whoever is listening, and by nobody who has stopped", () => {
   const heard = [];
   const stop = events.subscribe((event) => heard.push(event.type));
@@ -107,7 +123,13 @@ test("what another process wrote is heard here, and what this one wrote is not h
     day: events.dayOf(at),
     expires: Math.floor((at + events.KEEP_MS) / 1000),
   });
-  await new Promise((resolve) => setTimeout(resolve, 120));
+  // The follower reads the store on a 20ms tick, so the other process's line
+  // arrives some ticks from now rather than on this line. A fixed wait is a
+  // race with whatever else the machine is doing - 120ms was enough alone and
+  // not always enough with the rest of the suite writing behind it, which is
+  // this file failing about one full run in four. Poll for what is expected
+  // instead, so the test is as fast as the machine and as patient as it needs.
+  await eventually("the follower to hear what another process wrote", () => heard.length >= 2);
   stopFollowing();
   stop();
 

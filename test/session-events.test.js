@@ -19,7 +19,7 @@ process.env.CODERVIBES_STORE = "json";
 const events = await import("../server/events.js");
 const log = await import("../server/session-events.js");
 const { store } = await import("../server/store/index.js");
-const { KINDS, MAX_TEXT, RING_SIZE, BATCH_SIZE, KEEP_MS, sessionEventInternals } = log;
+const { KINDS, MAX_TEXT, RING_SIZE, BATCH_SIZE, FLUSH_MS, KEEP_MS, sessionEventInternals } = log;
 
 const file = path.join(dataDir, ".codervibes-session-events.json");
 // Small "at" values read well but expired decades ago as far as the store is
@@ -31,6 +31,16 @@ test.beforeEach(async () => {
   await fs.rm(file, { force: true });
 });
 test.after(() => fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
+
+/** Poll until it is true, rather than sleep for as long as it took once. */
+async function eventually(what, check, { within = 5_000 } = {}) {
+  const deadline = Date.now() + within;
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() > deadline) throw new Error(`waited ${within}ms for ${what}, and it did not happen`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 test("an entry is in memory at once, stamped with a seq and an expiry, and in the store a moment later", async () => {
   const entry = log.append("ses_1", "agent_message_chunk", { text: "Reading the tests." }, { at: T });
@@ -140,9 +150,16 @@ test("since() reads from memory when the reader is inside the ring, and from the
 
 test("a batch is written when it fills, without waiting for the timer", async () => {
   for (let i = 0; i < BATCH_SIZE; i += 1) log.append("ses_7", "agent_message_chunk", { text: "." }, { at: T + i });
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The write is in flight, not waited for. A fixed tick is a race with
+  // whatever else is queued on the store - 50ms was not always enough under
+  // the whole suite - so poll, and poll for less than the timer, because the
+  // point of the test is that the batch went out without it.
+  await eventually(
+    "the full batch to go out on its own",
+    async () => (await store.loadSessionEvents({ session: "ses_7", limit: 1000 })).length === BATCH_SIZE,
+    { within: FLUSH_MS / 2 },
+  );
   assert.equal(sessionEventInternals.pending().length, 0);
-  assert.equal((await store.loadSessionEvents({ session: "ses_7", limit: 1000 })).length, BATCH_SIZE);
 });
 
 test("the last platform.status is the session's turn; last() finds the latest of a kind", () => {

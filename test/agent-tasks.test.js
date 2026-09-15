@@ -672,6 +672,32 @@ test("a settled task goes back to whoever sent it, as itself, and rings them", a
   }
 });
 
+test("two pieces closed in the same millisecond still come back oldest first", async () => {
+  // `settledAt` is a millisecond, and two pieces of one parent closing inside
+  // one is the ordinary case, not a corner: the test above closes them a few
+  // microseconds apart and only the machine's clock decides whether that
+  // reads as a tie. When it did, the pair came back newest-created first -
+  // whatever order `tasksFor` had left - and the sender read its own pieces
+  // backwards. That flake is what this pins down without a clock: the same
+  // instant on both, so there is only the tie-break to test.
+  const lead = who("l", "Lead");
+  const builder = who("b", "Builder");
+  const repo = aLedRepo("l", lead, builder);
+  const registry = fakeRegistry(repo);
+
+  const first = await createTask(registry, repo, { from: lead, to: builder, title: "add the route", minutes: 5, difficulty: "easy" });
+  const second = await createTask(registry, repo, { from: lead, to: builder, title: "index it", minutes: 5, difficulty: "easy" });
+  await updateTask(registry, first.id, "b", { state: "done", note: "route is in" });
+  await updateTask(registry, second.id, "b", { state: "done", note: "index is in" });
+  const together = new Date().toISOString();
+  for (const task of repo.tasks) task.settledAt = together;
+
+  assert.deepEqual(
+    reportsFor(registry, "l", { since: 0 }).map((report) => report.title),
+    ["add the route", "index it"],
+  );
+});
+
 // ---------------------------------------------------------------- outcomes
 
 test("a task closes with a report, or does not close", async () => {

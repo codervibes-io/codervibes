@@ -1,6 +1,6 @@
 {
-  "cutFrom": "de1f17fb8b654ee47fff70ec5bee0dc3bf833802",
-  "cutAt": "2026-09-15T18:25:58.390Z",
+  "cutFrom": "33fd01d1de9482e98d38bcbbeb4359ecdcb862eb",
+  "cutAt": "2026-09-15T23:25:09.602Z",
   "files": [
     ".gitignore",
     "LICENSE",
@@ -77,6 +77,7 @@
     "server/ingest-token.js",
     "server/limits.js",
     "server/litellm-command.js",
+    "server/local-install-script.js",
     "server/local.js",
     "server/machine-source.js",
     "server/mcp-local.js",

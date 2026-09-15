@@ -17,6 +17,41 @@ worked with them, and what became of the work.
 
 ## Running it
 
+One line, and it is running:
+
+```sh
+curl -fsSL https://codervibes.io/local.sh | sh
+```
+
+`/local.sh` (server/local-install-script.js, served by both editions) is six
+steps - what it needs, the code, the dependencies, the server, the coding
+agents on this machine, and where it all ended up. **Each one says what it
+found, says what it would do about it, and waits for a yes.** Enter is yes;
+`n` stops it there, having changed nothing past that step; `--yes` answers
+everything, and so does having no terminal to ask on. A `curl … | sh` is the
+least legible thing a person can be asked to run, and the answer to that is
+the script narrating itself while they watch, not a longer page here.
+
+Running it again is the way to update, and it is cheap: every step looks
+before it acts, and a step with nothing left to do - a checkout already
+current, a node_modules newer than its package.json, an env file already
+pointing here - says so and is skipped without asking. There is no state
+file; the state is what is on the disk, which is also why a run you stopped
+halfway carries on from where you stopped.
+
+What it repairs, with permission: a directory at `~/.codervibes/app` that is
+not this checkout is moved aside to `app.bak-<date>` rather than written
+over, and a pid file whose process is gone is removed and said so. What it
+will not do: stop a server it did not start, or free a port by killing
+whatever holds it - a port in use is reported, with `lsof -i :<port>` or
+`ss -ltnp` to find out whose it is, and `--port <n>` to go elsewhere. It
+installs nothing that would bring CoderVibes back after a reboot; a launchd
+plist or a systemd user unit is your own call. `--dir`, `--port`,
+`--no-setup` and `--no-start` change where it lands, which port it takes,
+and how much of it happens.
+
+By hand, which is what that line does:
+
 ```sh
 git clone https://github.com/codervibes-io/codervibes
 cd codervibes && npm install

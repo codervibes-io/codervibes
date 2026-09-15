@@ -641,6 +641,31 @@
   line-height: 1.6;
 }
 
+/* A line under a band's points - where the code is, and what the hosted
+   thing is instead. Smaller than the body and not faint: it is a sentence
+   somebody reads, not a caption. */
+.frame-note {
+  margin: 18px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* The one line to run, in the band that hands it over. It is
+   console-dom.js's `copyLine`, which is sized for a panel in the console;
+   on a landing page it is the thing the whole band is about, so it is
+   restated at the size of the figure's own line below it. */
+.frame-side .credential {
+  margin-top: 22px;
+}
+
+.frame-side .credential-value {
+  padding: 12px 14px;
+  border-color: var(--border-strong);
+  border-radius: 10px;
+  font-size: 14.5px;
+}
+
 /* The band about where this runs, on the sky.
    It is the answer to the question that decides whether anyone can use this
    at all - whose account, whose data - so it is not one white band among six.
@@ -1032,8 +1057,103 @@
   color: var(--text-faint);
 }
 
-/* --- the other four figures ---
-   One under each of the six bands (console-figures.js, `howFigureFor`).
+/* --- Get started ---
+   The first band's figure: a terminal running the line on the left, the
+   console it leaves running on the right, an arrow between them. The one
+   figure on this page that is a drawing (SVG nodes, console-figures.js
+   `startFigure`), so its colours are `fill` and `stroke` rather than
+   `background` and `color` - the palette tokens are the same ones. */
+.figure-start {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+}
+
+.start-svg {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+}
+
+.start-box {
+  fill: var(--bg-inset);
+  stroke: var(--border-strong);
+  stroke-width: 1.4;
+}
+
+.start-rule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.start-dot {
+  fill: var(--border-strong);
+}
+
+.start-cmd {
+  fill: var(--text);
+  font-family: var(--font-mono);
+  font-size: 8.4px;
+}
+
+.start-out {
+  fill: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 7.8px;
+}
+
+.start-brand {
+  fill: var(--text-dim);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+/* The arrow: a line and a head, no fill - a filled triangle at this size
+   reads as a blob. */
+.start-arrow-line,
+.start-arrow-head {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The column of pages, with the one you land on lit: the console's own
+   arrangement, five rows of it, because five pages is what the local
+   edition has. */
+.start-page {
+  fill: var(--border);
+}
+
+.start-page-current {
+  fill: var(--accent);
+}
+
+.start-pane {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.start-bar {
+  fill: var(--series-1);
+}
+
+.start-row {
+  fill: var(--border);
+}
+
+.start-note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* --- the other five figures ---
+   One under each of the other bands (console-figures.js, `howFigureFor`).
    Access and Measure draw the held call and comparison above; the four
    here are the page's own. Every band on this page is white except Your
    environment, which is the sky (`.frame-own`), so the boundary figure is
@@ -1465,6 +1585,32 @@
      the run's steps go from queued to their state one after the next, and
      the reason comes last. Search: the question is typed, then the answers
      arrive. */
+  /* Get started: the terminal has the line already - it is what the reader
+     is being asked to run, so it is never the thing that is missing - then
+     what the script printed arrives line by line, then the console it left
+     running. */
+  .figure-start .start-out,
+  .figure-start .start-arrow,
+  .figure-start .start-console {
+    opacity: 0;
+  }
+
+  .figure-start.seen .start-out {
+    animation: figure-in 320ms ease-out both;
+  }
+
+  .figure-start.seen .start-out:nth-of-type(2) { animation-delay: 220ms; }
+  .figure-start.seen .start-out:nth-of-type(3) { animation-delay: 540ms; }
+  .figure-start.seen .start-out:nth-of-type(4) { animation-delay: 860ms; }
+
+  .figure-start.seen .start-arrow {
+    animation: figure-in 380ms ease-out 1080ms both;
+  }
+
+  .figure-start.seen .start-console {
+    animation: figure-in 520ms ease-out 1260ms both;
+  }
+
   .figure-wire .wire-cmd,
   .figure-seek .seek-query {
     display: inline-block;
@@ -7292,6 +7438,15 @@ a.modal-inline-btn { text-decoration: none; }
      stack with the box in the middle, the two Observe panes stack, the
      run's four steps become two rows of two, and Connect's label takes its
      own line over the names. */
+  /* Get started. The line wraps rather than scrolling sideways in its box:
+     in the console a credential is one long token and scrolling is the only
+     honest thing to do with it, but this is the one line the front door is
+     asking somebody to run, and a line whose end is off the edge of a phone
+     is a line they cannot read before running. The drawing scales with the
+     page - it is a shape, and the line it shows is the copyable one above
+     it at full size. */
+  .frame-side .credential-value { white-space: pre-wrap; overflow-wrap: break-word; font-size: 13.5px; }
+  .start-note { font-size: 13px; }
   .figure-bound { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .figure-watch { gap: 24px; }
   .dag { grid-template-columns: repeat(2, minmax(0, 1fr)); }
