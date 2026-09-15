@@ -446,6 +446,73 @@ for (const route of [
 // `index: false`: the lines above decide what `/` is.
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
+/**
+ * Everything else.
+ *
+ * Under `/api`, JSON - because whatever asked was code, and an HTML page in
+ * the place of a body is how a fetch fails with "Unexpected token <" and
+ * says nothing about the address being wrong.
+ *
+ * Anywhere else, a person mistyped or followed a stale link, and what
+ * Express says to them is `Cannot GET /sessions/abc` in Times New Roman on
+ * white. It is not wrong, it is just the only thing this edition ever shows
+ * that does not look like the app - and it names none of the five pages, so
+ * somebody who guessed an address wrong has nothing to do next but guess
+ * again. This is the same document the console is, cut down: the two
+ * stylesheets, the titlebar, and the pages as links.
+ *
+ * Not a redirect to `/`: an address that does not exist is worth being told
+ * about once. A redirect would put the person on Executors wondering what
+ * happened to the link they followed.
+ */
+const PAGES = [
+  ["/executors", "Executors", "every machine reporting here"],
+  ["/performance", "Performance", "what the sessions cost and came to"],
+  ["/search", "Search", "every session this installation has seen"],
+  ["/tools", "Tools", "what the agents reached for"],
+  ["/connectors", "Connectors", "the git host your pull requests live on"],
+];
+
+const escape = (text) => String(text).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+
+const notFoundPage = (asked) => `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <title>Not here - CoderVibes</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/console.css" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  </head>
+  <body class="console-page">
+    <header class="titlebar">
+      <span class="logo">
+        <svg class="logo-bolt" viewBox="0 0 32 32" aria-hidden="true"><path d="M19 2 L8 18 H15 L12 30 L24 13 H17 Z" /></svg>
+        CoderVibes
+      </span>
+      <div class="console-titlebar-actions"><span class="chip chip-none">local</span></div>
+    </header>
+    <main class="detail" style="max-width: 640px; padding: 24px 16px;">
+      <header class="detail-head"><h1 class="detail-title">Not here</h1></header>
+      <p class="console-hint">There is no <span class="row-id">${escape(asked)}</span> in this CoderVibes. It has five pages:</p>
+      <section class="console-panel">
+        ${PAGES.map(([href, title, note]) => `<div class="row"><a class="row-name" href="${href}">${title}</a><span class="row-note">${note}</span></div>`).join("\n        ")}
+      </section>
+    </main>
+  </body>
+</html>
+`;
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `No such address: ${req.method} /api${req.path}` });
+});
+
+app.use((req, res) => {
+  res.status(404).type("html").send(notFoundPage(req.path));
+});
+
 // ------------------------------------------------------------------- boot
 
 app.listen(PORT, HOST, () => {
@@ -458,6 +525,13 @@ app.listen(PORT, HOST, () => {
   // What the pages need in memory before anybody opens one. All three read
   // the store this process already has; none of them reaches the network.
   sessionLog.warm().then(() => sessionLog.sweep()).catch((err) => console.warn(`sessions: ${err.message}`));
+  // And every minute after that, which this edition was not doing: a
+  // session whose `end` hook never came - a terminal killed, a laptop shut -
+  // sat live for as long as this process ran, so "working now" on Executors
+  // meant "worked at some point since you started this". The cloud has swept
+  // since the sessions were memory-only (mcp.js mounts the same interval);
+  // there was nowhere in this edition that did.
+  setInterval(() => sessionLog.sweep(), 60_000).unref();
   replay.warm({ repoNameOf: () => null }).catch((err) => console.warn(`replay: ${err.message}`));
   // The catalogue once - it is empty here (`catalogueSources`), and asking
   // for it is what makes Search's index a whole one rather than sessions

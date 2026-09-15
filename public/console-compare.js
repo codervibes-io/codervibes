@@ -43,6 +43,7 @@
 // is the gold bar labelled "best".
 import { el, button, count, money, duration, problem } from "./console-dom.js";
 import { listTable, listRow, heatRanks, heatCell } from "./console-list.js";
+import { hasSandboxes, hasTasks } from "./console-edition.js";
 
 /** The dimensions, in the order the chips show them - the server's, with labels. */
 export const DIMENSIONS = [
@@ -67,6 +68,7 @@ const plural = (n, word, words = `${word}s`) => `${n} ${n === 1 ? word : words}`
 export const FIGURES = [
   {
     key: "closureRate",
+    tasks: true,
     title: "Tasks finished",
     unit: "of the tasks it took, the share that finished",
     better: "higher",
@@ -76,6 +78,7 @@ export const FIGURES = [
   },
   {
     key: "tokensPerTask",
+    tasks: true,
     title: "Tokens per task",
     unit: "every token a task's model calls used, averaged",
     better: "lower",
@@ -86,6 +89,7 @@ export const FIGURES = [
   },
   {
     key: "costPerTask",
+    tasks: true,
     title: "Cost per task",
     unit: "what a task's model calls cost, averaged",
     better: "lower",
@@ -97,6 +101,7 @@ export const FIGURES = [
   },
   {
     key: "timeToClosure",
+    tasks: true,
     title: "Time to finish",
     unit: "from the session's start to the moment it landed, the median",
     better: "lower",
@@ -106,6 +111,7 @@ export const FIGURES = [
   },
   {
     key: "oneShotRate",
+    tasks: true,
     title: "Finished first time",
     unit: "of the tasks that finished whose steering was counted, the share nobody had to come back to",
     better: "higher",
@@ -124,6 +130,7 @@ export const FIGURES = [
   },
   {
     key: "interventions",
+    tasks: true,
     title: "Interventions to finish",
     unit: "lines said to it, follow-ups, cuts short, review rounds and retries before a task finished, averaged",
     better: "lower",
@@ -179,6 +186,7 @@ export const FIGURES = [
   },
   {
     key: "writtenPerFinished",
+    tasks: true,
     title: "Lines per finished task",
     unit: "lines of code written for each task that landed",
     better: null,
@@ -318,7 +326,18 @@ function steeringPanel(rows) {
 }
 
 /** The figures a page can show: cost only when a model here is priced. */
-export const figuresFor = (priced) => FIGURES.filter((figure) => priced || !figure.priced);
+/**
+ * The figures a page can show: cost only where a model here is priced, and
+ * the seven that are readings of tasks only where tasks are handed out.
+ *
+ * `tasks: true` marks a figure whose numerator or denominator is a task -
+ * how many finished, what one took, how long one ran. On an installation
+ * that hands out none (console-edition.js) all seven are "—" over "0 tasks"
+ * for every option, which is ten charts saying nothing at the top of the
+ * page. What is left is the five that stand on a session or on a merge, and
+ * those fill in as soon as there is a merge to read.
+ */
+export const figuresFor = (priced) => FIGURES.filter((figure) => (priced || !figure.priced) && (hasTasks() || !figure.tasks));
 
 /**
  * The row that wins a figure, or null when none can. Lowest or highest of
@@ -365,7 +384,11 @@ function chart(rows, figure, picked = new Set()) {
     const mine = picked.has(row.key);
     const item = el("li", `chart-row${row === best ? " is-best" : ""}${mine ? " is-picked" : ""}`);
     const label = el("span", "chart-label");
-    label.append(el("span", "chart-name", row.name), el("span", "chart-n", plural(row.tasks, "task")));
+    // How much the bar stands on. Tasks where they are handed out, and
+    // sessions where they are not (console-edition.js): "0 tasks" under
+    // every bar of a chart whose figure is a session's is a row saying the
+    // figure beside it was measured over nothing.
+    label.append(el("span", "chart-name", row.name), el("span", "chart-n", hasTasks() ? plural(row.tasks, "task") : plural(row.sessions, "session")));
     const track = el("span", "chart-track");
     const bar = el("span", "chart-bar");
     // A bar is at least a sliver when there is a value, so a row with
@@ -466,7 +489,14 @@ export function compareView({ data, failed, state, onState, highlight = null }) 
   };
 
   function redraw() {
-    const picked = DIMENSIONS.find((entry) => entry.key === current.dimension) ?? DIMENSIONS[0];
+    // The dimensions this installation can actually choose between. Where
+    // everything runs on the one machine (console-edition.js) "Sandbox" is
+    // a chip onto a chart of one bar, and one bar compares with nothing -
+    // which is the argument the whole panel is built on. The reader's own
+    // pick falls back to the first that is left, so a state saved with
+    // `sandbox` in it does not leave the panel blank.
+    const dimensions = DIMENSIONS.filter((entry) => entry.key !== "sandbox" || hasSandboxes());
+    const picked = dimensions.find((entry) => entry.key === current.dimension) ?? dimensions[0];
     const rows = data.dimensions?.[picked.key] ?? [];
     // Only light bars on the dimension the pick was of: a sandbox pick says
     // nothing about which harness is yours.
@@ -483,7 +513,7 @@ export function compareView({ data, failed, state, onState, highlight = null }) 
     const unreported = data.unreported?.[picked.key]?.tasks ?? 0;
 
     const chips = el("div", "list-filters compare-dims");
-    for (const entry of DIMENSIONS) {
+    for (const entry of dimensions) {
       const chip = button("filter-chip", entry.label, () => set({ dimension: entry.key }));
       chip.setAttribute("aria-pressed", entry.key === picked.key ? "true" : "false");
       chips.append(chip);

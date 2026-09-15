@@ -30,6 +30,7 @@ import * as sessionLog from "./sessions.js";
 import * as sessionEvents from "./session-events.js";
 import * as ingestToken from "./ingest-token.js";
 import { sessionCalling } from "./telemetry-ingest.js";
+import { withSpan, annotate } from "./telemetry.js";
 import { publicOrigin } from "./public-url.js";
 
 const SERVER_INFO = { name: "codervibes-local", version: "0.1.0" };
@@ -120,18 +121,45 @@ async function runCall(context, name, args, session) {
 
   let outcome;
   try {
-    outcome = await executeSessionTool(name, args ?? {}, {
-      owner: context.user,
-      origin: context.origin ?? null,
-      sessionRecordId,
-      // One person, and every session here is theirs: there is no repo to
-      // ask whether they can open, because there are no repos.
-      allow: () => true,
-      repoName: () => null,
-      // No model of this installation's own to read the hits with, so
-      // `answer: true` says so instead of asking one (session-tools.js).
-      answers: false,
-    });
+    // The call is one span, the way the hosted endpoint records its own
+    // (mcp.js): what the agent called, whether it worked and how long it
+    // took, from the side that served it. It is what the Tools page counts.
+    //
+    // Nothing else can supply it. Claude Code's export names every MCP call
+    // `mcp_tool` whichever tool it was, and the hooks' copy of this one is
+    // the harness's report of a call this app served itself - a mirror, and
+    // left out for that reason (tool-stats.js `isMirror`). Without this the
+    // page said "no tools used" to a person whose agent had just used three
+    // of ours, which is the opposite of what the page is for.
+    outcome = await withSpan(
+      "tool.call",
+      {
+        "cv.session.id": sessionRecordId ?? undefined,
+        "cv.owner": context.user,
+        "cv.tool.name": name,
+        // This app's own, as against a server on the person's own MCP list.
+        "cv.tool.kind": "collab",
+      },
+      async () => {
+        const out = await executeSessionTool(name, args ?? {}, {
+          owner: context.user,
+          origin: context.origin ?? null,
+          sessionRecordId,
+          // One person, and every session here is theirs: there is no repo to
+          // ask whether they can open, because there are no repos.
+          allow: () => true,
+          repoName: () => null,
+          // No model of this installation's own to read the hits with, so
+          // `answer: true` says so instead of asking one (session-tools.js).
+          answers: false,
+        });
+        // A tool that refused is a call that failed, and the page that
+        // asks which tools keep failing has to be told so.
+        annotate({ "cv.tool.ok": !out.isError });
+        return out;
+      },
+      { parent: sessionRecordId ? sessionLog.contextFor(sessionRecordId) : null },
+    );
   } catch (err) {
     // A thrown tool is still a tool result: MCP keeps protocol errors for
     // protocol problems, and an agent that gets one cannot tell "your id was

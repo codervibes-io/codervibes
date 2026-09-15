@@ -2673,6 +2673,32 @@ button.search-top-name:hover {
   gap: 8px;
 }
 
+/* The refusal: what the host said about the token, under the form, in the
+   same cell (page-git-hosts.js). A cell is one line with its overflow
+   hidden (`.list-cell` below) because a cell holds a fact - and this is the
+   one cell in this console that holds a sentence. So "GitHub did not accept
+   that token: Bad credentials" ran off the side of the table and read as
+   "GitHub did not accept tha", which is the half that says nothing about
+   what to do.
+
+   The cell stacks and the words wrap. `align-items: stretch` so the
+   sentence gets the cell's width rather than the form's own flex-end
+   alignment, and it is the cell that changes rather than `.console-problem`
+   everywhere: the same paragraph in every other panel on every other page
+   is in a panel, where it already wraps. */
+.git-hosts-table .list-cell.keep {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.git-hosts-table .console-problem {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The name, and the chip that says whether it is connected, on one line -
    the chip is in the name rather than in a cell of its own, because a phone
    keeps one cell and that one is the form. */
@@ -7276,7 +7302,24 @@ a.modal-inline-btn { text-decoration: none; }
 
   /* Six pages in 390px do not fit in a row, so the strip scrolls sideways
      rather than wrapping, and runs edge to edge so a page cut off at the
-     side is visibly cut off - which is what says "there are more". */
+     side is visibly cut off - which was meant to be what says "there are
+     more".
+
+     It is not, and a stranger's first run is where that showed: the local
+     edition's five pages end on Tools about four pixels short of the right
+     edge, so the strip looks like the whole of itself and Connectors is a
+     page nobody knows is there. A cut-off tab only says "there is more"
+     when a tab happens to straddle the edge, and which one does depends on
+     the page names.
+
+     So the edge says it instead. The two fades are backgrounds rather than
+     an overlay, because a background can be attached to the content
+     (`local`) or to the element (`scroll`) and that difference is the whole
+     trick: the raised-white pair scrolls away with the tabs, uncovering the
+     dark pair, which does not - so each end is shaded exactly while there
+     is something past it, and neither is shaded when the strip fits. No
+     element, no JavaScript and nothing that has to be told the scroll
+     moved. */
   .app-sidebar {
     padding: 6px 8px;
     border-right: none;
@@ -7284,6 +7327,12 @@ a.modal-inline-btn { text-decoration: none; }
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
+    background:
+      linear-gradient(to right, var(--bg-raised) 30%, transparent) left center / 28px 100% no-repeat local,
+      linear-gradient(to left, var(--bg-raised) 30%, transparent) right center / 28px 100% no-repeat local,
+      linear-gradient(to right, var(--shadow-strong), transparent) left center / 18px 100% no-repeat scroll,
+      linear-gradient(to left, var(--shadow-strong), transparent) right center / 18px 100% no-repeat scroll,
+      var(--bg-raised);
   }
 
   .app-sidebar::-webkit-scrollbar { display: none; }

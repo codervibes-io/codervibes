@@ -1,6 +1,6 @@
 {
-  "cutFrom": "2c494b7f1f1d06738c3ec3c6714e0bb54ccdf0d6",
-  "cutAt": "2026-09-15T17:10:48.171Z",
+  "cutFrom": "9a79f07202a0c9049fc38d20f2e082b527d3c17f",
+  "cutAt": "2026-09-15T18:08:50.925Z",
   "files": [
     ".gitignore",
     "LICENSE",
@@ -14,6 +14,7 @@
     "public/console-compare.js",
     "public/console-connect.js",
     "public/console-dom.js",
+    "public/console-edition.js",
     "public/console-executor-stats.js",
     "public/console-facets.js",
     "public/console-filters.js",

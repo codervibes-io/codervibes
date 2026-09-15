@@ -24,6 +24,7 @@ import { el, ago, lastSeen, agentStatus, money, helpMark, TASK_HELP } from "./co
 import { listTable, listRow, statusCell, listHead } from "./console-list.js";
 import { setupPanel, setupDetail } from "./console-connect.js";
 import { harnessDetail } from "./console-harnesses.js";
+import { hasAgents } from "./console-edition.js";
 
 const plural = (n, word, words = `${word}s`) => `${n} ${n === 1 ? word : words}`;
 
@@ -271,7 +272,14 @@ export function executorsList({ executors, ingest, ingestFailed = null, priced =
   );
   // The status is the one cell a phone keeps (statusCell marks it): a name
   // and whether it is working is the list at 390px.
-  const table = listTable({ head: ["Executor", "Location", "Invited by", "Status", tasksHead(), "Sessions", "Cost", "Last active"] });
+  // Who let it in is a column only where something can be let in. An
+  // installation with no invited agents (console-edition.js) has one kind
+  // of row - a machine that reported - and nothing ever invited it, so the
+  // column was a full column of dashes and the width is better spent on
+  // the figures beside it.
+  const table = listTable({
+    head: ["Executor", "Location", ...(hasAgents() ? ["Invited by"] : []), "Status", tasksHead(), "Sessions", "Cost", "Last active"],
+  });
   for (const { row, status } of rows) {
     const calls = row.calls ?? [];
     const running = calls.find((call) => call.state === "running");
@@ -288,7 +296,7 @@ export function executorsList({ executors, ingest, ingestFailed = null, priced =
         onOpen: () => onOpen(pathFor("executors", row.id)),
         cells: [
           row.location?.label ?? whereItIs(row, describeExternal) ?? "—",
-          invitedByOf(row),
+          ...(hasAgents() ? [invitedByOf(row)] : []),
           statusCell(status.word, status.className),
           tasksCell(row.performance),
           sessionsCell(row.performance),

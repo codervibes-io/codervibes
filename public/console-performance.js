@@ -48,6 +48,7 @@ import { adoptionPanel } from "./console-adoption.js";
 import { trendView, SPLITS } from "./console-trend.js";
 import { frictionView } from "./console-friction.js";
 import { whereFilter, whereChip, whereLabel } from "./console-where.js";
+import { hasTasks, hasWorkspaces } from "./console-edition.js";
 
 /** How far back the ranking looks; the server's ranges. */
 export const RANGES = [
@@ -235,7 +236,13 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
   pane.append(
     detailHead(
       "Performance",
-      el("p", "detail-summary", "What the work was done with and what came of it: which model provider, harness, sandbox and person finish tasks, at what cost. Then every session in the range, ranked."),
+      el(
+        "p",
+        "detail-summary",
+        hasTasks()
+          ? "What the work was done with and what came of it: which model provider, harness, sandbox and person finish tasks, at what cost. Then every session in the range, ranked."
+          : "What the work was done with and what came of it: which model provider and harness the sessions ran on, how much steering each took and what it cost. Then every session in the range, ranked.",
+      ),
     ),
   );
   // The one filter, first, because it is the first question - "how did the
@@ -280,7 +287,11 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
   // Who has taken this up. After the harness changes and before the
   // ranking: the panels above are about the work, this one is about the
   // people doing it, and the table below is neither.
-  pane.append(adoptionPanel({ data: adoption, failed: adoptionFailed }));
+  //
+  // Where there are no workspaces there is no team to place: the ladder
+  // ranked the one account on the machine against itself, under a heading
+  // that said the range had nobody in it (console-edition.js).
+  if (hasWorkspaces()) pane.append(adoptionPanel({ data: adoption, failed: adoptionFailed }));
 
   /**
    * Draw the two panels for the picks as they stand.
@@ -347,7 +358,15 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
 
   const rows = data.rows ?? [];
   if (!rows.length) {
-    pane.append(el("p", "console-hint", "Nothing to rank yet. Rows appear as sessions run and the tasks they take are finished."));
+    pane.append(
+      el(
+        "p",
+        "console-hint",
+        hasTasks()
+          ? "Nothing to rank yet. Rows appear as sessions run and the tasks they take are finished."
+          : "Nothing to rank yet. A row appears for each session, once one has run on a machine that reports here.",
+      ),
+    );
     return pane;
   }
 
@@ -421,6 +440,12 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     const spend = compare.spend ?? 0;
     const waste = compare.waste ?? 0;
     const kept = compare.aftermath?.kept ?? null;
+    // An edition with no tasks and no git host connected yet has nothing
+    // for this to count, and "0 landed · 0 shipped · 0 reverted" is not a
+    // finding - it is a heading over nothing, six tiles wide, at the top of
+    // the page. It comes back the moment a pull request does
+    // (console-edition.js).
+    if (!hasTasks() && !landed && !wasted && !waste) return null;
     const panel = el("section", "console-panel perf-yield");
     panel.append(el("h3", "panel-heading", "What the range came to"));
     panel.append(
@@ -528,38 +553,52 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     // by it made every old session read as a perfect first-time finish.
     const oneShotKnown = shown.reduce((sum, row) => sum + (row.oneShotKnown ?? 0), 0);
     const narrowed = shown.length !== rows.length;
+    // The sessions tile leads in every edition. What stands beside it does
+    // not: where work is handed out as tasks, the headline is how many
+    // finished, how many landed first time and how many rows beat the
+    // median - and where none is handed out (console-edition.js) those four
+    // can only ever read 0 or "—", which is a row of tiles saying the page
+    // is broken. Then the headline is the two figures a laptop does have:
+    // what the steering came to, and what it cost.
+    const sessionsTile = metric(shown.length, narrowed ? "sessions shown" : "sessions", narrowed ? `of ${rows.length} in the range` : null);
+    // Nought steers over rows nobody could watch would be the table
+    // claiming they were never steered; the tile says the same thing
+    // the cells do - and the same again for rows nobody counted, where
+    // the total is a sum of noughts that were never added up.
+    const steersTile = metric(
+      !watched ? "—" : counted ? steers : "not measured",
+      "steers",
+      !watched
+        ? "steering not visible for these"
+        : counted
+          ? "follow-ups, cuts short, review rounds, retries"
+          : "no session here counted the steering it took",
+    );
     const out = [
-      metrics(
-        metric(shown.length, narrowed ? "sessions shown" : "sessions", narrowed ? `of ${rows.length} in the range` : null),
-        tasksMetric(finished, taken),
-        // The one figure that says whether the tool is getting better
-        // rather than whether the people around it are working harder.
-        metric(
-          oneShotKnown ? percent(oneShot / oneShotKnown) : finished ? "not measured" : "—",
-          "finished first time",
-          oneShotKnown
-            ? `${oneShot} of ${oneShotKnown}, with nobody coming back`
-            : finished
-              ? "no session here counted the steering it took, so this cannot be read"
-              : "nothing finished yet",
-        ),
-        // Nought steers over rows nobody could watch would be the table
-        // claiming they were never steered; the tile says the same thing
-        // the cells do - and the same again for rows nobody counted, where
-        // the total is a sum of noughts that were never added up.
-        metric(
-          !watched ? "—" : counted ? steers : "not measured",
-          "steers",
-          !watched
-            ? "steering not visible for these"
-            : counted
-              ? "follow-ups, cuts short, review rounds, retries"
-              : "no session here counted the steering it took",
-        ),
-        metric(percent(data.medianRate), "median rate", "the bar for effective, across everything"),
-        metric(effective, "effective", `of ${shown.length} sessions`),
-        metric(money(cost) ?? "—", "spent", taken ? `${money(cost / taken) ?? "—"} per task` : null),
-      ),
+      hasTasks()
+        ? metrics(
+          sessionsTile,
+          tasksMetric(finished, taken),
+          // The one figure that says whether the tool is getting better
+          // rather than whether the people around it are working harder.
+          metric(
+            oneShotKnown ? percent(oneShot / oneShotKnown) : finished ? "not measured" : "—",
+            "finished first time",
+            oneShotKnown
+              ? `${oneShot} of ${oneShotKnown}, with nobody coming back`
+              : finished
+                ? "no session here counted the steering it took, so this cannot be read"
+                : "nothing finished yet",
+          ),
+          steersTile,
+          metric(percent(data.medianRate), "median rate", "the bar for effective, across everything"),
+          metric(effective, "effective", `of ${shown.length} sessions`),
+          metric(money(cost) ?? "—", "spent", taken ? `${money(cost / taken) ?? "—"} per task` : null),
+        )
+        // No "per task" under the spend either: there are no tasks to
+        // divide it by, and `taken` is nought, so the note the full
+        // console carries is left off rather than read as free.
+        : metrics(sessionsTile, steersTile, metric(money(cost) ?? "—", "spent", null)),
     ];
 
     if (!shown.length) {
@@ -573,7 +612,17 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     // Steering now, and it counts everything after the first ask rather
     // than the lines alone. Beside it, the share of the work that landed
     // with nobody coming back to it.
-    const table = listTable({ head: ["Session", tasksHead(), "Rate", "Rounds", "Steering", "First time", "Kept in review", "Undone after", "Kept 30d", "Cost"] });
+    // Four of these columns are readings of tasks - what was finished, at
+    // what rate, over how many rounds, how much of it first time - and
+    // where no task is ever handed out (console-edition.js) they are four
+    // columns of "—" with the first one, the widest and the one the page is
+    // sorted by, at the head. What is left is every column that counts a
+    // session or a diff, which is what that edition has.
+    const table = listTable({
+      head: hasTasks()
+        ? ["Session", tasksHead(), "Rate", "Rounds", "Steering", "First time", "Kept in review", "Undone after", "Kept 30d", "Cost"]
+        : ["Session", "Steering", "Kept in review", "Undone after", "Kept 30d", "Cost"],
+    });
     table.classList.add("perf-table");
     // Each of the four numbers is shaded against the rest of its own
     // column - green where a row is doing well on it, red where it is not
@@ -622,9 +671,13 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
         aside: [row.repository, whereLabel(row.where)].filter(Boolean).join(" · ") || null,
         live: row.live > 0,
         cells: [
-          statusCell(`${row.finished} done`, row.effective ? "chip-ok" : row.tasks ? "" : "chip-none"),
-          heatCell(percent(row.rate), heat.rate[at]),
-          heatCell(one(row.rounds), heat.rounds[at]),
+          ...(hasTasks()
+            ? [
+              statusCell(`${row.finished} done`, row.effective ? "chip-ok" : row.tasks ? "" : "chip-none"),
+              heatCell(percent(row.rate), heat.rate[at]),
+              heatCell(one(row.rounds), heat.rounds[at]),
+            ]
+            : []),
           // A row nobody could watch being steered says so rather than
           // showing a nought that reads as "never needed a word" - and so
           // does one whose steering was never counted, which is the same
@@ -646,14 +699,25 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
           // grid and takes the name off the screen. On a phone this column
           // goes the way Rate, Rounds and Steering go, and the tile above
           // still says the figure is not measured.
-          row.finished && !row.oneShotKnown ? el("span", "chip chip-none", "not measured") : heatCell(percent(row.oneShotRate), heat.oneShot[at]),
+          ...(hasTasks()
+            ? [row.finished && !row.oneShotKnown ? el("span", "chip chip-none", "not measured") : heatCell(percent(row.oneShotRate), heat.oneShot[at])]
+            : []),
           // Nought lines and "we could not count them" are different
           // facts, and the second is the common one: a Codex session's
           // hooks carry no tool input at all.
           row.linesMeasured ? heatCell(percent(row.acceptance), heat.acceptance[at]) : statusCell("not measured", "chip-none"),
           heatCell(row.landed ? `${row.undoneAfter} of ${row.landed}` : "—", heat.undoneAfter[at]),
           heatCell(percent(row.kept), heat.kept[at]),
-          heatCell(row.cost ? money(row.cost) : "—", heat.cost[at]),
+          // Cost is the cell a phone keeps where the tasks chip is not there
+          // to be it. That is not a nicety: `.list-row` is `display:
+          // contents` and the phone grid is two columns (console.css), so a
+          // row with no kept cell contributes one item and the row after it
+          // fills the second column - two sessions on one line, each with
+          // half a name. One kept cell a row, always, and money is the fact
+          // worth keeping.
+          hasTasks()
+            ? heatCell(row.cost ? money(row.cost) : "—", heat.cost[at])
+            : { keep: true, node: heatCell(row.cost ? money(row.cost) : "—", heat.cost[at]) },
         ],
         onOpen: () => onOpen(path),
       });
@@ -663,12 +727,18 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     out.push(table);
 
     const caveats = [
-      "Score = tasks finished, minus a bounded penalty for the steering each took; ones still going count a little, less every day. Steering is everything after the first ask - a follow-up, a turn cut short, a round of review, a retried task; First time is the share of the finished tasks that took none of it.",
+      hasTasks()
+        ? "Score = tasks finished, minus a bounded penalty for the steering each took; ones still going count a little, less every day. Steering is everything after the first ask - a follow-up, a turn cut short, a round of review, a retried task; First time is the share of the finished tasks that took none of it."
+        // No tasks here, so no score to explain and no first-time share to
+        // read off one: what orders the table is what is left of it.
+        : "Steering is everything after the first ask - a follow-up, a turn cut short, a round of review. Rows are ordered by what their sessions got done and how much steering that took.",
       shown.some((row) => row.steeringVisible === false)
         ? "A session run by an outside service is prompted where we cannot see it, so its steering reads \"not visible\" rather than nought."
         : null,
       shown.some((row) => row.steeringKnown === false || (row.finished && !row.oneShotKnown))
-        ? "A session recorded before this app counted turns has no steering count at all, so Steering and First time read \"not measured\" for it - a nought nobody counted is not a nought."
+        ? hasTasks()
+          ? "A session recorded before this app counted turns has no steering count at all, so Steering and First time read \"not measured\" for it - a nought nobody counted is not a nought."
+          : "A session recorded before this app counted turns has no steering count at all, so Steering reads \"not measured\" for it - a nought nobody counted is not a nought."
         : null,
       "Kept in review is, of the lines a row's sessions wrote, how many were in the diff that merged - matched line by line, so a line a person rewrote is not the agent's. Undone after is, of the pull requests a row landed, how many were reverted, broke the build or had a fix come back within a month. Kept 30d is how much of a merge's added lines are still in the file thirty days on - see docs/measures.md.",
       shown.some((row) => !row.linesMeasured)

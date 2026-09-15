@@ -58,6 +58,7 @@ import { OUTCOME_CHIPS } from "./console-tools.js";
 import { RANGES, rangePicker } from "./console-performance.js";
 import { whereFilter, whereChip } from "./console-where.js";
 import { filterPicker, filterRow } from "./console-filters.js";
+import { hasAccessTrail, hasConnectorTools } from "./console-edition.js";
 
 /** The two things searched, as the box names them. */
 export const MODES = [
@@ -631,8 +632,10 @@ function usagePanel(stats, { onBucket, onOpen, pathFor, onSearch }) {
       metric(count(data.sessions.agents), "agents", `${plural(data.sessions.people, "person")} behind them`),
       metric(count(data.calls.tools), "tool calls", data.calls.toolsFailed ? `${count(data.calls.toolsFailed)} failed` : "none failed"),
       metric(count(data.calls.models), "model calls", `${count(data.calls.tokens)} tokens`),
-      metric(money(data.calls.cost), "spent", "on the sessions' own keys"),
-      metric(count(data.trail.total), "on the access trail", `${count(data.trail.stopped)} stopped, ${count(data.trail.open)} waiting`, data.trail.stopped ? "metric-warn" : ""),
+        metric(money(data.calls.cost), "spent", "on the sessions' own keys"),
+      ...(hasAccessTrail()
+        ? [metric(count(data.trail.total), "on the access trail", `${count(data.trail.stopped)} stopped, ${count(data.trail.open)} waiting`, data.trail.stopped ? "metric-warn" : "")]
+        : []),
     ),
   );
   const grid = el("div", "search-top-grid");
@@ -643,25 +646,39 @@ function usagePanel(stats, { onBucket, onOpen, pathFor, onSearch }) {
       onOpen: (row) => onOpen(pathFor("tools", row.name)),
       empty: "No tool was called in this range.",
     }),
-    topList("Connectors used", data.connectors, {
-      name: (row) => row.id,
-      note: (row) => (row.writes ? `${count(row.writes)} writes` : null),
-      onOpen: (row) => onOpen(pathFor("connectors", row.id)),
-      empty: "No connector was called in this range.",
-    }),
-    topList("Permissions reached for", data.trail.permissions, {
-      name: (row) => row.label ?? row.permission,
-      note: (row) => (row.stopped ? `${count(row.stopped)} stopped` : null),
-      onOpen: (row) => onSearch(row.permission, "trail"),
-      empty: "No permission was reached for in this range.",
-    }),
-    topList("Agents on the trail", data.trail.agents, {
-      name: (row) => row.name ?? row.id,
-      note: (row) => (row.stopped ? `${count(row.stopped)} stopped` : null),
-      onOpen: (row) => onSearch(row.name ?? row.id, "trail"),
-      empty: "No agent reached for a permission in this range.",
-    }),
+    // Connectors, where a connector is a service an agent can be lent.
+    // Where it is not - this edition's Connectors page is git hosts, read
+    // with your own token (console-edition.js) - a row can never appear, and
+    // pressing one would open a page that is not the one it names.
+    ...(hasConnectorTools()
+      ? [topList("Connectors used", data.connectors, {
+        name: (row) => row.id,
+        note: (row) => (row.writes ? `${count(row.writes)} writes` : null),
+        onOpen: (row) => onOpen(pathFor("connectors", row.id)),
+        empty: "No connector was called in this range.",
+      })]
+      : []),
   );
+  // The two lists that are readings of the trail. Both open a trail search
+  // when a row is pressed, so where there is no trail they are two lists of
+  // "none in this range" whose rows lead to a page that is not there
+  // (console-edition.js).
+  if (hasAccessTrail()) {
+    grid.append(
+      topList("Permissions reached for", data.trail.permissions, {
+        name: (row) => row.label ?? row.permission,
+        note: (row) => (row.stopped ? `${count(row.stopped)} stopped` : null),
+        onOpen: (row) => onSearch(row.permission, "trail"),
+        empty: "No permission was reached for in this range.",
+      }),
+      topList("Agents on the trail", data.trail.agents, {
+        name: (row) => row.name ?? row.id,
+        note: (row) => (row.stopped ? `${count(row.stopped)} stopped` : null),
+        onOpen: (row) => onSearch(row.name ?? row.id, "trail"),
+        empty: "No agent reached for a permission in this range.",
+      }),
+    );
+  }
   wrap.append(grid);
   return wrap;
 }
@@ -681,7 +698,16 @@ export function searchView({ ask, kind = "all", provider = null, range = "all", 
   pane.append(
     detailHead(
       "Search",
-      el("p", "detail-summary", "How did we do that, and who did what under which permission? Ask in words and find the session that did it, or the row on the access trail; the bars say when."),
+      el(
+        "p",
+        "detail-summary",
+        hasAccessTrail()
+          ? "How did we do that, and who did what under which permission? Ask in words and find the session that did it, or the row on the access trail; the bars say when."
+          // No permissions where there is one person, so no trail and no
+          // "who" worth asking - the question this page answers there is
+          // the first half of that sentence (console-edition.js).
+          : "How did we do that? Ask in words and find the session that did it; the bars say when.",
+      ),
     ),
   );
 
@@ -723,16 +749,24 @@ export function searchView({ ask, kind = "all", provider = null, range = "all", 
   // Which thing is searched, and how far back. The mode is in the
   // address (a trail search is a different link); the range is the page's.
   const controls = el("div", "search-controls");
-  const modes = el("div", "list-filters search-modes");
-  modes.setAttribute("role", "tablist");
-  for (const [id, label] of MODES) {
-    const chip = button("filter-chip", label, () => onMode(id));
-    chip.setAttribute("role", "tab");
-    chip.setAttribute("aria-pressed", String(ask.mode === id));
-    chip.setAttribute("aria-selected", String(ask.mode === id));
-    modes.append(chip);
+  // Two things are searched here, so there are two tabs - but only one of
+  // them where there is no access trail (console-edition.js). A tablist
+  // with one tab on it is not a choice; it is a control that looks pressed
+  // and does nothing, beside a tab onto an empty list. There the range is
+  // the only thing in the row.
+  if (hasAccessTrail()) {
+    const modes = el("div", "list-filters search-modes");
+    modes.setAttribute("role", "tablist");
+    for (const [id, label] of MODES) {
+      const chip = button("filter-chip", label, () => onMode(id));
+      chip.setAttribute("role", "tab");
+      chip.setAttribute("aria-pressed", String(ask.mode === id));
+      chip.setAttribute("aria-selected", String(ask.mode === id));
+      modes.append(chip);
+    }
+    controls.append(modes);
   }
-  controls.append(modes, rangePicker(SEARCH_RANGES, range, onRange));
+  controls.append(rangePicker(SEARCH_RANGES, range, onRange));
   pane.append(controls);
   // And which work is searched at all: this workspace's own repos, and -
   // pressed for - repositories nobody connected here and work in none
@@ -765,14 +799,21 @@ export function searchView({ ask, kind = "all", provider = null, range = "all", 
   // newest first, and under it what the range came to - the numbers that
   // were the whole of this page when it was asked nothing.
   if (!ask.q && ask.mode === "sessions") {
-    pane.append(usagePanel(stats, { onOpen, pathFor, onSearch, onBucket: (bucket) => onBucket(bucket, "trail") }));
+    // A bar on the usage histogram is tool calls, so pressing one opens the
+    // trail at that hour - and where there is no trail it opens the
+    // sessions of that hour instead, which is the listing that edition has
+    // (console-edition.js). A press onto a mode that is not there would
+    // land on an empty page with no tab to get back from.
+    pane.append(usagePanel(stats, { onOpen, pathFor, onSearch, onBucket: (bucket) => onBucket(bucket, hasAccessTrail() ? "trail" : "sessions") }));
     pane.append(
       el(
         "p",
         "console-hint",
         "Ask what you would ask a colleague: \"how do I trigger a deploy\", \"who set up the LiteLLM proxy\", \"which sessions used the Linear connector\". " +
-          "The words are searched always; the meaning too when the installation has a LiteLLM proxy with an embeddings model behind it. " +
-          "The access trail is searched by its words alone: a tool, a permission, an agent, a person, \"refused\".",
+          "The words are searched always; the meaning too when the installation has a LiteLLM proxy with an embeddings model behind it." +
+          (hasAccessTrail()
+            ? " The access trail is searched by its words alone: a tool, a permission, an agent, a person, \"refused\"."
+            : ""),
       ),
     );
   }

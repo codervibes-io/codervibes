@@ -357,6 +357,34 @@ test("the addresses this edition serves are its own, and the ones it does not ar
   }
 });
 
+test("an address this edition has not got is answered in its own voice, with the five pages on it", async () => {
+  // Express's own answer is `Cannot GET /sessions/abc` in Times New Roman:
+  // the one thing this edition ever shows that does not look like the app,
+  // and it names none of the pages - so somebody who guessed an address
+  // (`/sessions/<id>` rather than `/activity/<id>`, say) has nothing to do
+  // next but guess again.
+  const missed = await call(`/sessions/${sessionId}`);
+  assert.equal(missed.status, 404);
+  assert.doesNotMatch(missed.body, /Cannot GET/);
+  assert.match(missed.body, /console\.css/, "the page is not drawn in the console's own style");
+  for (const page of ["/executors", "/performance", "/search", "/tools", "/connectors"]) {
+    assert.match(missed.body, new RegExp(`href="${page}"`), `the 404 does not offer ${page}`);
+  }
+  assert.match(missed.body, new RegExp(`/sessions/${sessionId}`), "it does not say which address it is about");
+
+  // Not a redirect: an address that does not exist is worth being told
+  // about once, rather than landing on Executors wondering what happened to
+  // the link.
+  assert.equal(missed.status, 404);
+
+  // Under /api it stays JSON, whatever asked for it was code - an HTML body
+  // there is how a fetch fails with "Unexpected token <" and says nothing
+  // about the address being wrong.
+  const api = await call("/api/nothing-here");
+  assert.equal(api.status, 404);
+  assert.match(api.body.error, /No such address: GET \/api\/nothing-here/);
+});
+
 // ----------------------------------------------- the git host, connected
 
 test("a git host connected with a token makes a merge a fact this edition knows", async () => {
@@ -478,6 +506,8 @@ const entry = await read("public", "local.js");
 const serverEntry = await read("server", "local.js");
 const gitHostsPage = await read("public", "page-git-hosts.js");
 const css = await read("public", "console.css");
+const edition = await read("public", "console-edition.js");
+const toolsSource = await read("public", "console-tools.js");
 
 const COLUMN = ["executors", "performance", "search", "tools", "connectors"];
 
@@ -545,6 +575,109 @@ test("neither file links to a page, a panel or a sign-in this edition does not h
   assert.match(gitHostsPage, /api\s*\n?\s*\.gitHosts\(\)/, "which is where the read is");
 });
 
+test("every predicate an edition can turn off is on until somebody turns it off", () => {
+  // The rule the whole switch rests on: the hosted console is exactly what
+  // it was. A predicate that defaulted to false - or one added to
+  // `onePerson` and not to the list of `let`s - would take a panel off the
+  // full product with no test failing, because the full console never calls
+  // anything in this file.
+  const defaults = [...edition.matchAll(/^let (\w+) = (true|false);$/gm)];
+  assert.ok(defaults.length >= 6, "the edition switch has lost its state");
+  for (const [, name, value] of defaults) assert.equal(value, "true", `${name} is off before anybody says so`);
+  // And `onePerson()` turns off every one of them: a predicate declared and
+  // never flipped is a page still saying the hosted product's words.
+  const flipped = [...edition.matchAll(/^  (\w+) = false;$/gm)].map((match) => match[1]);
+  assert.deepEqual(flipped.sort(), defaults.map(([, name]) => name).sort(), "onePerson does not turn off what the module holds");
+  // Each is read as a call, not exported as a value: a value is read once at
+  // import and a module imported before `onePerson()` ran would keep the
+  // answer it was given first.
+  for (const name of ["hasTasks", "hasWorkspaces", "hasAgents", "hasSandboxes", "hasAccessTrail", "hasConnectorTools"]) {
+    assert.match(edition, new RegExp(`export const ${name} = \\(\\) =>`), `${name} is not a predicate`);
+  }
+});
+
+test("the entry says what this edition has none of before a page is drawn, and the pages read it", async () => {
+  // The finding this answers: a fresh local install ranked its one account
+  // on an Adoption ladder, offered Sandbox as something to compare, kept a
+  // column for who invited an agent, promised an access trail of who did
+  // what under which permission, and headed its ranking with tasks that
+  // nothing here hands out. Every one of those is the full console's page
+  // module saying the full product's words.
+  //
+  // Source-read because there is no DOM here, and at the entry because the
+  // call has to happen at import time: a switch flipped inside `start()`
+  // would be flipped after the page modules had already been imported, and
+  // a module that had read a predicate on the way in would keep the wrong
+  // answer.
+  assert.match(entry, /import \{ onePerson \} from "\.\/console-edition\.js";/);
+  assert.match(entry, /^onePerson\(\);$/m, "the entry does not flip the switch at module scope");
+
+  // And each page reads the one that is about it. Named individually rather
+  // than looked for in the round, because what matters is which predicate a
+  // page asks: a Performance that asked `hasWorkspaces()` about its task
+  // columns would be right today and wrong the moment an edition has
+  // workspaces without tasks.
+  const reads = [
+    ["console-performance.js", ["hasTasks", "hasWorkspaces"]],
+    ["page-performance.js", ["hasWorkspaces"]],
+    ["console-compare.js", ["hasSandboxes", "hasTasks"]],
+    ["console-trend.js", ["hasSandboxes", "hasTasks"]],
+    ["page-executors.js", ["hasAgents"]],
+    ["console-tools.js", ["hasConnectorTools"]],
+    ["console-search.js", ["hasAccessTrail", "hasConnectorTools"]],
+    ["page-search.js", ["hasAccessTrail"]],
+  ];
+  for (const [file, predicates] of reads) {
+    const source = await read("public", file);
+    for (const predicate of predicates) {
+      assert.match(source, new RegExp(`import \\{[^}]*\\b${predicate}\\b[^}]*\\} from "\\./console-edition\\.js"`), `${file} does not take ${predicate} from the one module`);
+      assert.match(source, new RegExp(`${predicate}\\(\\)`), `${file} imports ${predicate} and never asks it`);
+    }
+  }
+
+  // The four that were the finding, each pinned to the thing it decides -
+  // so that a later edit which drops the branch fails here rather than
+  // quietly putting the ladder back on a laptop.
+  const performance = await read("public", "console-performance.js");
+  assert.match(performance, /if \(hasWorkspaces\(\)\) pane\.append\(adoptionPanel\(/, "the Adoption ladder is drawn without asking whether there is a team");
+  assert.match(performance, /hasTasks\(\)\n\s+\? \["Session", tasksHead\(\)/, "the ranking heads with tasks whether or not any are handed out");
+  // And a row still keeps exactly one cell at 390px. The tasks chip was
+  // the ranking's kept cell; taking it out left rows with none, and since
+  // `.list-row` is `display: contents` over a two-column phone grid
+  // (console.css), two sessions then shared one line with half a name each.
+  // Caught in a screenshot, held here.
+  assert.match(performance, /\{ keep: true, node: heatCell\(row\.cost \? money\(row\.cost\) : "—", heat\.cost\[at\]\) \}/, "the ranking has no cell a phone keeps");
+  const executors = await read("public", "page-executors.js");
+  assert.match(executors, /hasAgents\(\) \? \["Invited by"\] : \[\]/, "Invited by is a column even where nothing invites");
+  const search = await read("public", "console-search.js");
+  assert.match(search, /hasAccessTrail\(\)\n\s+\? "How did we do that, and who did what under which permission\?/, "the subtitle promises permissions unconditionally");
+  const compare = await read("public", "console-compare.js");
+  assert.match(compare, /DIMENSIONS\.filter\(\(entry\) => entry\.key !== "sandbox" \|\| hasSandboxes\(\)\)/);
+  const trend = await read("public", "console-trend.js");
+  assert.match(trend, /SPLITS\.filter\(\(split\) => split\.key !== "sandbox" \|\| hasSandboxes\(\)\)/);
+  // And the charts above the ranking, which were ten readings of a task
+  // apiece: seven of the twelve figures divide by one, so on a laptop the
+  // top of the page was "—" over "0 tasks", nine times, in the panel whose
+  // whole argument is that one bar compares with nothing.
+  assert.match(compare, /hasTasks\(\) \|\| !figure\.tasks/);
+  assert.match(trend, /hasTasks\(\) \|\| metric\.key !== "finished"/);
+});
+
+test("no page tells anybody a tool was in the room, because there are no rooms", () => {
+  // Repo rooms went in #168 and the word outlived them on the Tools page,
+  // where it was the caveat under every table and the note on two tiles. It
+  // reads as a place a person could go and look at, which is the worst kind
+  // of stale word: it sends somebody looking rather than only puzzling them.
+  // Not local-only - the cloud has no rooms either - so this is asserted
+  // over the whole of public/.
+  // Matched on what a browser would draw rather than on the word: the
+  // comments are allowed to say where the phrase came from and why it went,
+  // which is the whole value of leaving that note behind.
+  const drawn = toolsSource.replace(/^\s*\/\/.*$/gm, "");
+  assert.doesNotMatch(drawn, /in the room/, "the Tools page still puts a tool in a room");
+  assert.match(drawn, /The tool was in the session it was called in/);
+});
+
 test("the Connectors page keeps its form on a phone, where every other cell is dropped", () => {
   // The durable half of "checked at both widths". A row keeps exactly one
   // cell below 860px (console.css), and on this page that cell is the form
@@ -565,6 +698,27 @@ test("the Connectors page keeps its form on a phone, where every other cell is d
   assert.match(css.slice(0, css.indexOf("@media (max-width: 860px)")), /\.git-hosts-table \{/, "the desktop columns come before the phone block, so the phone block still wins");
   assert.match(phone, /\.git-hosts-table \{[^}]*grid-template-columns: minmax\(0, 1fr\)/, "and on a phone the row stacks: the name on one line, the form on the next");
   assert.match(css, /\.git-host-form,\n\.git-host-actions \{[\s\S]*?flex-wrap: wrap;/, "the form wraps here and nowhere else");
+});
+
+test("the refusal a host answers with is read in the panel, not cut off at the edge of the table", () => {
+  // What a wrong token gets is the host's own sentence under the form
+  // (page-git-hosts.js), and it is the only thing on the page that says
+  // what to do next. It goes in a `.list-cell`, and a cell is one line with
+  // its overflow hidden - because every other cell in this console holds a
+  // fact. So "GitHub did not accept that token: Bad credentials" was shown
+  // as "GitHub did not accept tha" at 1512px and worse at 390px, which is
+  // the half that says nothing.
+  assert.match(gitHostsPage, /form\.after\(problem\(err\.message\)\)/, "the refusal goes under the form, in the form's cell");
+  const rule = css.slice(css.indexOf(".git-hosts-table .list-cell.keep {"));
+  assert.ok(css.includes(".git-hosts-table .list-cell.keep {"), "nothing lets the one cell in this console that holds a sentence wrap");
+  assert.match(rule.slice(0, rule.indexOf("}")), /white-space: normal/, "the cell still holds the sentence to one line");
+  assert.match(rule.slice(0, rule.indexOf("}")), /flex-direction: column/, "the sentence sits under the form rather than beside it");
+  // And at both widths, which is one rule rather than two: it is written
+  // above the 860px block, where the phone's single column inherits it.
+  assert.ok(
+    css.indexOf(".git-hosts-table .list-cell.keep {") < css.indexOf("@media (max-width: 860px)"),
+    "the wrapping is inside the phone block, so at 1512px the refusal is still cut off",
+  );
 });
 
 test("the local console is the same grid as the full one, so the phone rules reach it", () => {

@@ -158,6 +158,101 @@ export function toolKindOf(name) {
   return "harness";
 }
 
+/**
+ * The name Claude Code's export gives every MCP call, whichever server and
+ * whichever tool it was: `mcp_tool`, and nothing else on the event to say
+ * more (2.1.272, checked against a real session's export).
+ *
+ * Taken at face value that is a tool called `mcp_tool` that the harness runs
+ * itself - `harness` kind, native - so every call an agent made to a server
+ * on its MCP list, this app's own tools included, was summed into the native
+ * line and the Tools page could not name one of them. The page whose whole
+ * question is "which of the things we gave the agents do they use" answered
+ * "none" for the things we gave them.
+ *
+ * The hooks do say: PreToolUse carries `mcp__codervibes__discover` in
+ * `tool_name`. So a generic export is renamed from the hook that announced
+ * the same call (`mcpNamed`), and the span is the tool the agent called.
+ */
+const GENERIC_MCP_TOOL = "mcp_tool";
+
+/**
+ * MCP calls the hooks named, per session, kept until the export's copy of
+ * the same call arrives - which is seconds later, in the next batch, and so
+ * after the `done` hook has already closed the call in `openCalls`.
+ *
+ * Bounded twice: fifty per session, and nothing older than the window. A
+ * name nobody claims is dropped rather than kept for a call that is never
+ * coming.
+ */
+const mcpCalls = new Map();
+
+/**
+ * How far apart the hook's moment and the export's start may be and still be
+ * the same call. The hook fires as the call is made and the export dates it
+ * by `at - duration_ms`; the two agree to well under a second when both
+ * clocks are this machine's, and this is wide enough for a spooled backlog
+ * shipped by a laptop whose clock drifted.
+ */
+const MCP_MATCH_MS = 30_000;
+
+function noteMcpCall(session, tool, at) {
+  const mine = (mcpCalls.get(session) ?? []).filter((call) => at - call.at <= MCP_MATCH_MS);
+  mine.push({ tool, at });
+  mcpCalls.set(session, mine.slice(-50));
+}
+
+/**
+ * The hook's name for the MCP call that started at `startedAt`, consumed so
+ * two exports cannot both claim one hook. Nearest start wins: a session runs
+ * its calls one after another, and "nearest" is what keeps two calls of the
+ * same tool in the order they were made.
+ */
+function mcpNamed(session, startedAt) {
+  const mine = mcpCalls.get(session);
+  if (!mine?.length) return null;
+  let best = -1;
+  for (let index = 0; index < mine.length; index += 1) {
+    const away = Math.abs(mine[index].at - startedAt);
+    if (away > MCP_MATCH_MS) continue;
+    if (best < 0 || away < Math.abs(mine[best].at - startedAt)) best = index;
+  }
+  if (best < 0) return null;
+  const [call] = mine.splice(best, 1);
+  if (!mine.length) mcpCalls.delete(session);
+  return call.tool;
+}
+
+/**
+ * What the export's tool was really called. Everything but an MCP call is
+ * already named; one of those is `mcp_tool` and is named by the hook that
+ * announced it, or by the parameters when the harness wrote them (an older
+ * Claude Code puts `mcp_server` and `mcp_tool` in `tool_parameters`).
+ *
+ * A call neither names stays `mcp_tool` and stays in the native line: a row
+ * called `mcp_tool` on the Tools page would be a row nobody can act on, and
+ * an installation whose harnesses report no hooks has nothing here to say
+ * which server was asked.
+ */
+function exportedToolName(record, attrs, startedAt) {
+  const name = String(attrs.tool_name ?? "");
+  if (name !== GENERIC_MCP_TOOL) return name;
+  const said = parametersName(attrs.tool_parameters);
+  return said ?? mcpNamed(record.id, startedAt) ?? name;
+}
+
+/** `{"mcp_server":"codervibes","mcp_tool":"discover"}` as the harness's own name for it. */
+function parametersName(parameters) {
+  if (parameters == null) return null;
+  try {
+    const parsed = JSON.parse(String(parameters));
+    if (parsed?.mcp_server && parsed?.mcp_tool) return `mcp__${parsed.mcp_server}__${parsed.mcp_tool}`;
+  } catch {
+    // Not JSON, so it says nothing about which server was asked.
+  }
+  return null;
+}
+
 // ------------------------------------------------------------------ skills
 //
 // A skill is a file the harness loads for a way of working - a SKILL.md
@@ -467,7 +562,11 @@ async function fold(who, record, event) {
       return "agent.turn";
     }
     case "claude_code.tool_result": {
-      const tool = toolNameOf(attrs.tool_name);
+      // What it was called, which for an MCP call the export does not say
+      // and the hook does (`exportedToolName`). Read before anything else
+      // here, because the name is also what decides the kind.
+      const named = exportedToolName(record, attrs, at - ms);
+      const tool = toolNameOf(named);
       const isSkill = SKILL_TOOLS.has(String(attrs.tool_name));
       const ok = attrs.success == null ? true : Boolean(attrs.success);
       if (isSkill && hooked.has(record.id)) {
@@ -483,7 +582,7 @@ async function fold(who, record, event) {
         attrs: {
           ...inherited,
           "cv.tool.name": tool,
-          "cv.tool.kind": toolKindOf(attrs.tool_name),
+          "cv.tool.kind": toolKindOf(named),
           "cv.tool.ok": ok,
           "cv.tool.args": toolArgsOf(attrs.tool_parameters),
           "cv.tool.decision": attrs.decision_source ?? undefined,
@@ -1034,6 +1133,40 @@ const CALLING_MS = 60_000;
 const namesOurTool = (tool, name) => tool === name || String(tool ?? "").endsWith(`__${name}`);
 
 /**
+ * How recently a hook-fed session must have been heard from to be taken as
+ * the one calling, when no open call names the tool.
+ *
+ * The join below wants the `tool` hook to have arrived before the call it
+ * announced, and it used to: the hook posted as it fired. It does not any
+ * more. Each hook writes its event to `~/.codervibes/spool` and a shipper
+ * posts the spool in the background (setup-script.js), so the PreToolUse
+ * that named `mcp__codervibes__name_session` regularly lands here *after*
+ * the call - by fourteen milliseconds in the run that found this - and the
+ * join missed by that much. What the session then got was a record of its
+ * own holding nothing but the naming, and the name went on that: one
+ * `claude -p` run, two rows on Executors, and the titled one empty.
+ *
+ * So when nothing is open on this tool, the owner's most recently heard
+ * hook-fed session is the caller. Two minutes, because a person at a
+ * keyboard is heard from far more often than that - every prompt, every
+ * tool call and every stop is an event - and because it is longer than any
+ * spool lag: the shipper runs on each hook and posts what it holds. A
+ * session quiet for longer than two minutes is one nobody is working in,
+ * and a call that arrives then is somebody else's - a second harness, a
+ * probe - and gets a record of its own.
+ *
+ * The cost of being wrong is small and the cost of the old behaviour was
+ * not: two live terminals of the same person under the same harness are
+ * already indistinguishable here (same owner, same ingest harness), so the
+ * newest wins, and what it costs is a call on the wrong one of that
+ * person's own sessions rather than a phantom row with nothing in it.
+ */
+const AT_KEYBOARD_MS = 2 * 60_000;
+
+/** When a session was last heard from - what decides which live one is the one being worked in. */
+const heardAt = (record) => Number(record.lastSeenAt ?? record.startedAt ?? 0);
+
+/**
  * The hook-fed session that is calling one of this app's tools right now.
  *
  * A person's own setup reaches /mcp on the same token the hooks report on,
@@ -1049,21 +1182,32 @@ const namesOurTool = (tool, name) => tool === name || String(tool ?? "").endsWit
  * before it makes the call, and the hook posts before the call is sent, so
  * by the time the call reaches /mcp the session it comes from has an open
  * call on that very tool (`openCalls`). The owner's live session under this
- * harness with the newest such open call is the caller. None means the
- * hooks are not installed (a Cursor, an older setup), and the endpoint
- * keeps a record of its own for those.
+ * harness with the newest such open call is the caller.
+ *
+ * That is the exact answer, and it is only available when the hook has
+ * landed. Since the hooks spool and ship (`AT_KEYBOARD_MS`) it often has
+ * not, so failing that, the owner's most recently heard hook-fed session
+ * is taken as the caller - which is the same session a moment earlier or
+ * later, and was the whole of the bug.
+ *
+ * Neither means no hook-fed session of this person is live at all: the
+ * hooks are not installed (a Cursor, an older setup) or nobody is working.
+ * The endpoint keeps a record of its own for those, opened at the first
+ * tool call and not before.
  */
 export function sessionCalling({ user, harness }, name, { at = Date.now() } = {}) {
   let best = null;
+  let heard = null;
   for (const record of sessionLog.inMemory()) {
     if (record.state !== "live" || record.kind !== "harness" || !record.key) continue;
     if (record.owner !== user || record.harness?.id !== harness?.id) continue;
+    if (at - heardAt(record) <= AT_KEYBOARD_MS && (!heard || heardAt(record) > heardAt(heard))) heard = record;
     for (const call of openCalls.get(record.id) ?? []) {
       if (!namesOurTool(call.tool, name) || at - call.at > CALLING_MS) continue;
       if (!best || call.at > best.at) best = { at: call.at, record };
     }
   }
-  return best?.record ?? null;
+  return best?.record ?? heard;
 }
 
 /**
@@ -1172,6 +1316,12 @@ export async function noteHook(who, { session, event = null, at: when = null, re
       sessionLog.end(record.id);
       openCalls.delete(record.id);
       hooked.delete(record.id);
+      // The names the hooks gave this session's MCP calls outlive the
+      // session by the window, because the export's copy of a call arrives
+      // in the next batch and that batch can land after the session ended -
+      // which for a `claude -p` run is every call it made. After the window
+      // nothing can claim them (`mcpNamed`), so this is only the tidying.
+      setTimeout(() => mcpCalls.delete(record.id), MCP_MATCH_MS).unref?.();
       return { session: record.id, event: "end", reason: String(body.reason ?? "").trim() || null };
 
     case "file": {
@@ -1213,6 +1363,10 @@ export async function noteHook(who, { session, event = null, at: when = null, re
       const id = String(body.tool_use_id ?? "").trim() || `${record.id}:${(anonymous += 1)}`;
       const title = toolTitleOf(tool, body.tool_input);
       openCall(record.id, id, tool, at);
+      // An MCP call is the one kind the export cannot name, so the name is
+      // kept here for the export's copy of this call to borrow
+      // (`exportedToolName`).
+      if (tool.startsWith("mcp__")) noteMcpCall(record.id, tool, at);
       sessionEvents.append(
         record.id,
         "tool_call",

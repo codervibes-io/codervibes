@@ -24,6 +24,7 @@
 // gridline, marker and legend is HTML, placed by percentage. Nothing is
 // only in the hover.
 import { el, button, count, money } from "./console-dom.js";
+import { hasSandboxes, hasTasks } from "./console-edition.js";
 import { listTable, listRow } from "./console-list.js";
 
 /**
@@ -52,8 +53,12 @@ export const METRICS = [
   { key: "lines", label: "Lines written", unit: "lines of code the sessions that started in each period wrote", format: (value) => count(value), priced: false },
 ];
 
-/** The metrics a page can show: cost only when a model here is priced. */
-export const metricsFor = (priced) => METRICS.filter((metric) => priced || !metric.priced);
+/**
+ * The metrics a page can show: cost only when a model here is priced, and
+ * tasks finished only where tasks are handed out (console-edition.js) -
+ * otherwise it is a chip onto a line flat at nought.
+ */
+export const metricsFor = (priced) => METRICS.filter((metric) => (priced || !metric.priced) && (hasTasks() || metric.key !== "finished"));
 
 /** What the line can be split by: nothing, or one of the server's splits, in its order. */
 export const SPLITS = [
@@ -285,7 +290,12 @@ export function trendView({ data, failed, state, onState }) {
   const metrics = metricsFor(data.priced !== false);
   let current = { metric: metrics[0].key, split: "none", table: false, ...state };
   if (!metrics.some((metric) => metric.key === current.metric)) current.metric = metrics[0].key;
-  if (!SPLITS.some((split) => split.key === current.split)) current.split = "none";
+  // What this installation can split a line by. "Sandbox" goes where
+  // everything runs on the one machine (console-edition.js): it is one line
+  // relabelled, under a chip that promises a comparison. A split saved from
+  // elsewhere falls back to none rather than drawing nothing.
+  const splits = SPLITS.filter((split) => split.key !== "sandbox" || hasSandboxes());
+  if (!splits.some((split) => split.key === current.split)) current.split = "none";
   const body = el("div", "trend-body");
   panel.append(body);
 
@@ -310,7 +320,7 @@ export function trendView({ data, failed, state, onState }) {
     // question: "spend" is the figure, "by harness" is the comparison.
     const splitter = el("div", "list-filters trend-splits");
     splitter.append(el("span", "trend-splits-label", "Split by"));
-    for (const split of SPLITS) {
+    for (const split of splits) {
       const chip = button("filter-chip", split.label, () => set({ split: split.key }));
       chip.setAttribute("aria-pressed", split.key === current.split ? "true" : "false");
       splitter.append(chip);

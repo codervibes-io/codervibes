@@ -23,8 +23,10 @@
 // asked. The server leaves them out (tool-stats.js `isNative`).
 //
 // "Closed" is a session whose pull request merged. The tool was in the
-// room: that is company, not cause, and the page says so - but company is
-// what a reader choosing tools can act on. A row with more sessions than
+// session that closed it: that is company, not cause, and the page says so -
+// but company is what a reader choosing tools can act on. (It read "in the
+// room" until the rooms were taken out in #168, which left the page naming
+// a place a reader could go and look for.) A row with more sessions than
 // its page can name is one whose sessions are older than the ranking
 // holds, or live: counted, not listed.
 import { el, ago, duration, count, money, problem, detailHead, metric, metrics } from "./console-dom.js";
@@ -33,6 +35,7 @@ import { RANGES, rangePicker } from "./console-performance.js";
 import { effectNote } from "./console-harness.js";
 import { whereFilter, whereChip } from "./console-where.js";
 import { filterRow } from "./console-filters.js";
+import { hasConnectorTools } from "./console-edition.js";
 
 const percent = (rate) => (rate == null ? "—" : `${Math.round(rate * 100)}%`);
 const plural = (n, word) => `${count(n)} ${word}${n === 1 ? "" : "s"}`;
@@ -309,19 +312,37 @@ export function toolsView({ range, data, failed, onRange, onReread = () => {}, o
   const closedOf = (rows) => rows.reduce((sum, row) => sum + (row.sessionsClosed ?? 0), 0);
   pane.append(
     metrics(
-      metric(count(connectors.rows.length), "connectors used", connectors.rows.length ? `in the room for ${plural(closedOf(connectors.rows), "closed session")}` : "none called in the range"),
-      metric(count(skills.rows.length), "skills used", skills.rows.length ? `in the room for ${plural(closedOf(skills.rows), "closed session")}` : "none used in the range"),
+      // "in the room for" was where this used to count from: a repo room
+      // held the people and their sessions, and a tool was in it. The rooms
+      // went in #168 and the sentence outlived them, promising a place a
+      // reader could go and look. What it always meant is the sessions
+      // themselves, so that is what it says.
+      ...(hasConnectorTools()
+        ? [metric(count(connectors.rows.length), "connectors used", connectors.rows.length ? `in ${plural(closedOf(connectors.rows), "closed session")}` : "none called in the range")]
+        : []),
+      metric(count(skills.rows.length), "skills used", skills.rows.length ? `in ${plural(closedOf(skills.rows), "closed session")}` : "none used in the range"),
       metric(count(tools.rows.length), "other tools", tools.totals?.calls ? `${plural(tools.totals.calls, "call")}` : "none called in the range"),
     ),
   );
 
+  // Connectors, where a connector is a service an agent can be lent. Where
+  // it is not - the local edition's Connectors page is three git hosts and
+  // a token box, for reading your own pull requests, and nothing a session
+  // can call (console-edition.js) - the panel would stand empty for ever
+  // over a sentence telling the reader to go and connect one and wait. So
+  // it says what a connector is here instead, which is the answer to the
+  // question the empty panel was raising.
   pane.append(
     section(
       "Connectors",
-      "The services agents reached as you. Most closed sessions first; a row opens the connector.",
-      connectors.rows.length
-        ? connectorsTable(connectors.rows, { onOpen, pathFor })
-        : el("p", "console-hint", "No connector was called in this range. Connect one under Connectors and it appears here with the sessions that use it."),
+      hasConnectorTools()
+        ? "The services agents reached as you. Most closed sessions first; a row opens the connector."
+        : "Nothing here is lent to a session. The Connectors page on this installation is the git hosts your pull requests live on, read with your own token - not services an agent calls, so none of them can appear on this page.",
+      hasConnectorTools()
+        ? connectors.rows.length
+          ? connectorsTable(connectors.rows, { onOpen, pathFor })
+          : el("p", "console-hint", "No connector was called in this range. Connect one under Connectors and it appears here with the sessions that use it.")
+        : null,
     ),
   );
 
@@ -348,7 +369,7 @@ export function toolsView({ range, data, failed, onRange, onReread = () => {}, o
   );
 
   const caveats = [
-    "A closed session is one whose pull request merged. The tool was in the room for it - company, not cause; a tool on every session shares every merge.",
+    "A closed session is one whose pull request merged. The tool was in the session it was called in - company, not cause; a tool on every session shares every merge.",
     reachLine(data),
   ].filter(Boolean);
   pane.append(el("p", "console-caveat", caveats.join(" ")));

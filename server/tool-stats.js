@@ -89,10 +89,20 @@ export function isNative(name, kind) {
  * among them; mcp.js recorded the same call as it served it, with the
  * repo and the connector on it. One call, two spans - the harness's copy
  * is the one to leave out, since it knows less.
+ *
+ * Which copy is which is `cv.retroactive`, not `cv.harness.id`. A harness's
+ * report is dated by the client's clock and marked for it (telemetry.js
+ * `retroSpan`); the call this process served is not. The harness id read
+ * as "the harness reported this" and is not that: a span *inherits* it
+ * from the session's root (telemetry.js INHERITED), so the call mcp.js
+ * served on a person's own setup carried it too, and both copies of every
+ * such call were dropped. What that cost was the whole answer: the Tools
+ * page listed this app's own tools for invited agents and for nobody else,
+ * so a person whose agent had just used three of them read "no tools used".
  */
 export function isMirror(span) {
   const attrs = span.attrs ?? {};
-  return attrs["cv.tool.kind"] === "collab" && Boolean(attrs["cv.harness.id"]);
+  return attrs["cv.tool.kind"] === "collab" && Boolean(attrs["cv.retroactive"]);
 }
 
 /** A closed task's state, as the page groups it. */

@@ -10,6 +10,7 @@
 // object for the whole console and a page module that kept its own would be
 // a second place for the range to live.
 import { performanceView } from "./console-performance.js";
+import { hasWorkspaces } from "./console-edition.js";
 
 /**
  * @param {object} ctx
@@ -78,10 +79,13 @@ export function performancePage({ state, api, render, go, pathFor }) {
       );
     // And adoption: who here works with an agent, over the same range. The
     // fifth read, on its own like the others - a panel that could not be
-    // read is a line on that panel.
-    const adopting = api
-      .performanceAdoption(range)
-      .then(
+    // read is a line on that panel. Not read at all where there are no
+    // workspaces (console-edition.js): the panel is not drawn there, and a
+    // read whose answer nothing looks at is a request a laptop pays for
+    // every time the page is opened.
+    const adopting = !hasWorkspaces()
+      ? Promise.resolve()
+      : api.performanceAdoption(range).then(
         (data) => {
           if (state.performance.range === range) state.performance = { ...state.performance, adoption: data, adoptionFailed: null };
         },

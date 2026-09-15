@@ -37,6 +37,7 @@ import { gitHostsPage } from "./page-git-hosts.js";
 import { sessionPage } from "./page-session.js";
 import { NO_FILTERS } from "./console-performance.js";
 import { oneWhere } from "./console-where.js";
+import { onePerson } from "./console-edition.js";
 
 // There is one person and no workspaces, so "a repo of this workspace",
 // "a repository nobody registered here" and "no repository at all" are three
@@ -45,6 +46,15 @@ import { oneWhere } from "./console-where.js";
 // that would offer to include what is already there and the chip that would
 // mark every row.
 oneWhere();
+
+// And the rest of what this edition has none of: tasks, workspaces, invited
+// agents, sandboxes, an access trail, connectors an agent can call
+// (console-edition.js). Said once, before a page is drawn, because the pages
+// are the full console's and would otherwise head a column of dashes with
+// the name of a feature that is not here. Both switches are flipped at
+// import time and not in `start()`: a module that read one while it was
+// still true would draw the hosted product's words once and never again.
+onePerson();
 
 const dom = {
   main: () => document.getElementById("console"),

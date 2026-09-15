@@ -323,6 +323,92 @@ test("an agent whose hooks are not installed still gets a session, opened at its
   assert.match(own.body.session.actor.name, /own setup/);
 });
 
+test("the hook that announced the call can arrive after it, and the naming still lands on the session the person is working in", async () => {
+  // The hooks do not post as they fire. Each writes its event to a spool and
+  // a shipper posts what the spool holds in the background (setup-script.js),
+  // so the PreToolUse that names `mcp__codervibes__name_session` regularly
+  // reaches this process *after* the call it announced - by fourteen
+  // milliseconds in the `claude -p` run that found this. The join looked for
+  // an open call, found none, and opened a record of the connection's own:
+  // one real session, two rows on Executors, and the name on the empty one.
+  const before = (await get("/api/performance?range=7d&by=sessions")).body.rows.length;
+  const started = await post("/api/harness/session", {
+    events: [
+      { event: "start", session: "mcp-local-late", repo: "git@github.com:ada/engine.git", branch: "main", machine: "Adas-MBP", platform: "" },
+      { event: "prompt", session: "mcp-local-late", input: { session_id: "mcp-local-late", prompt: "Cut the flaky wait out of the deploy test" } },
+    ],
+  });
+  const late = started.body.noted[0].session;
+
+  // A connection of its own, as a fresh `claude -p` would open one, so this
+  // cannot pass by riding on the session the earlier tests left open.
+  const opened = await rpc({
+    jsonrpc: "2.0",
+    id: 50,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+  });
+
+  const { body } = await rpc(
+    { jsonrpc: "2.0", id: 51, method: "tools/call", params: { name: "name_session", arguments: { title: "Flaky wait" } } },
+    { session: opened.session },
+  );
+  assert.equal(body.result.isError, undefined, said(body.result));
+
+  const detail = await get(`/api/sessions/${late}`);
+  assert.equal(detail.body.session.title, "Flaky wait", "the name went on a record of the connection's own, which is the bug");
+
+  const after = await get("/api/performance?range=7d&by=sessions");
+  assert.equal(after.body.rows.length, before + 1, "the session is one row: the one with the prompt in it");
+
+  // And the hook lands, late, on the session it always belonged to.
+  await post("/api/harness/session", {
+    events: [
+      { event: "tool", session: "mcp-local-late", input: { session_id: "mcp-local-late", tool_name: "mcp__codervibes__name_session", tool_use_id: "t-late", tool_input: { title: "Flaky wait" } } },
+      { event: "done", session: "mcp-local-late", input: { session_id: "mcp-local-late", tool_name: "mcp__codervibes__name_session", tool_use_id: "t-late", tool_response: { ok: true } } },
+      { event: "end", session: "mcp-local-late", input: { session_id: "mcp-local-late", reason: "exit" } },
+    ],
+  });
+  assert.equal((await get("/api/performance?range=7d&by=sessions")).body.rows.length, before + 1);
+});
+
+test("a handshake is not a session: initialize, tools/list and ping open no record at all", async () => {
+  // A `curl` at /mcp to see whether it answers, a client that connects and
+  // then sits there: neither is work, and each used to leave a row saying
+  // "live" for as long as the process ran. A record is opened by a tool
+  // call and by nothing else.
+  const keys = async () => new Set((await get("/api/performance?range=7d&by=sessions")).body.rows.map((row) => row.key));
+  const before = await keys();
+  const opened = await rpc({
+    jsonrpc: "2.0",
+    id: 60,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "curl", version: "0" } },
+  });
+  await rpc({ jsonrpc: "2.0", id: 61, method: "tools/list" }, { session: opened.session });
+  await rpc({ jsonrpc: "2.0", id: 62, method: "ping" }, { session: opened.session });
+  assert.deepEqual([...await keys()], [...before], "a handshake left a row behind");
+
+  // And when one is opened, leaving ends it: a session that is over is over
+  // whether the client says goodbye (DELETE) or stops answering, which the
+  // transport's own sweep catches at the thirty-minute TTL.
+  const { body } = await rpc(
+    { jsonrpc: "2.0", id: 63, method: "tools/call", params: { name: "discover", arguments: { query: "nothing at all" } } },
+    { session: opened.session },
+  );
+  assert.equal(body.result.isError, undefined, said(body.result));
+  const after = [...await keys()].filter((key) => !before.has(key));
+  assert.equal(after.length, 1, "the first tool call is where a connection with no hooks behind it becomes a session");
+  assert.equal((await get(`/api/sessions/${after[0]}`)).body.session.state, "live");
+
+  await rpc(null, { session: opened.session, method: "DELETE" });
+  const gone = await eventually("the record the connection opened is ended when the connection goes", async () => {
+    const detail = await get(`/api/sessions/${after[0]}`);
+    return detail.body.session.state === "ended" ? detail : null;
+  });
+  assert.ok(gone, "a connection record left live is a row saying somebody is working when nobody is");
+});
+
 test("a DELETE ends the session, and the next call on it is told to initialize again", async () => {
   const gone = await rpc(null, { session: mcpSession, method: "DELETE" });
   assert.equal(gone.status, 204);

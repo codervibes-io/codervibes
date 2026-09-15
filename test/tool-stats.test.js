@@ -8,7 +8,7 @@ import { fold, tasksUsing, attribute, isNative, isMirror, kindOf, RANGES, DEFAUL
 const NOW = Date.parse("2026-09-04T12:00:00Z");
 const HOUR = 60 * 60 * 1000;
 
-function toolSpan({ name, kind = "connector", ok = true, ms = 10, at = NOW, session = "ses_1", agent = ["ag_1", "Nomad", "invited"], handed = 0, sandbox = 0, harness = null }) {
+function toolSpan({ name, kind = "connector", ok = true, ms = 10, at = NOW, session = "ses_1", agent = ["ag_1", "Nomad", "invited"], handed = 0, sandbox = 0, harness = null, retro = false }) {
   return {
     id: `${at}-${Math.random().toString(16).slice(2, 10)}`,
     name: "tool.call",
@@ -25,6 +25,10 @@ function toolSpan({ name, kind = "connector", ok = true, ms = 10, at = NOW, sess
       ...(handed ? { "cv.handed.chars": handed } : {}),
       ...(sandbox ? { "cv.sandbox.ms": sandbox } : {}),
       ...(harness ? { "cv.harness.id": harness } : {}),
+      // What the ingest marks every span it builds from a harness's report
+      // with (telemetry.js `retroSpan`): the clock was the client's, and the
+      // call was served somewhere else.
+      ...(retro ? { "cv.retroactive": true } : {}),
     },
   };
 }
@@ -123,16 +127,20 @@ test("the spans give a tool its calls, failures, times, context and callers; nat
   assert.deepEqual(native, { tools: 2, calls: 4, failed: 1, ms: 913 }, "what was left out, so the page can say so");
 });
 
-test("the harness's copy of a call this app served is not counted again", () => {
+test("the harness's copy of a call this app served is not counted again, and the copy this app served is", () => {
   // Claude Code exports the mcp__codervibes__send_message it ran; mcp.js
   // recorded the same call as it served it. One call, one row of one.
   const spans = [
+    toolSpan({ name: "send_message", kind: "collab", harness: "hn_1", retro: true }),
     toolSpan({ name: "send_message", kind: "collab", harness: "hn_1" }),
-    toolSpan({ name: "send_message", kind: "collab" }),
   ];
   assert.equal(isMirror(spans[0]), true);
-  assert.equal(isMirror(spans[1]), false);
-  assert.equal(isMirror(toolSpan({ name: "github.create_issue", kind: "mcp", harness: "hn_1" })), false, "a server on the person's own list is only ever seen by the harness");
+  assert.equal(
+    isMirror(spans[1]),
+    false,
+    "a call this app served on a person's own setup carries the harness id too - it is inherited from the session - so the harness id cannot be what tells the two copies apart, and when it was, both were dropped and the page listed none of this app's tools",
+  );
+  assert.equal(isMirror(toolSpan({ name: "github.create_issue", kind: "mcp", harness: "hn_1", retro: true })), false, "a server on the person's own list is only ever seen by the harness");
   const { tools } = fold({ spans, since: NOW - HOUR });
   assert.equal(tools.rows.length, 1);
   assert.equal(tools.rows[0].calls, 1);

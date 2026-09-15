@@ -7,6 +7,7 @@
 // view: a search is a link, so its spelling has to be one thing that the
 // page, the shell and anything linking to a search all agree on.
 import { searchView } from "./console-search.js";
+import { hasAccessTrail } from "./console-edition.js";
 
 /**
  * @param {object} ctx
@@ -32,7 +33,11 @@ export function searchPage({ state, api, render, go, pathFor }) {
     const params = new URLSearchParams(search);
     return {
       q: params.get("q")?.trim() ?? "",
-      mode: params.get("in") === "trail" ? "trail" : "sessions",
+      // `in=trail` only where there is a trail (console-edition.js): an
+      // address typed or pasted onto an installation that has none reads as
+      // a plain search rather than as a page with nothing on it and no tab
+      // to leave by.
+      mode: params.get("in") === "trail" && hasAccessTrail() ? "trail" : "sessions",
       from: Number(params.get("from")) || null,
       to: Number(params.get("to")) || null,
     };
