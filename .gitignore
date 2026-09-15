@@ -1,0 +1,5 @@
+node_modules/
+.codervibes-*.json
+.codervibes-*.tmp
+.env
+*.tmp

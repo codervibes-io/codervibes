@@ -1,0 +1,26 @@
+{
+  "name": "codervibes",
+  "version": "0.1.0",
+  "description": "Watch what your coding agents actually do.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server/local.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "express": "^5.1.0"
+  },
+  "codervibes": {
+    "cutFrom": "769f0f723ecf5a853cf5033324797656411b33cf",
+    "cutAt": "2026-09-15T07:30:31.830Z"
+  }
+}

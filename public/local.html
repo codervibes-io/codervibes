@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <title>CoderVibes</title>
+    <!-- The same two stylesheets the full console uses, and deliberately not
+         a third: the grid, the rail, the tables, the chips and the one 860px
+         block are shared, so a page that looks right there looks right here
+         and a phone rule written once is true in both. -->
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/console.css" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <meta name="theme-color" content="#f6f8f6" />
+  </head>
+  <body class="console-page">
+    <header class="titlebar">
+      <span class="logo">
+        <svg class="logo-bolt" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M19 2 L8 18 H15 L12 30 L24 13 H17 Z" />
+        </svg>
+        CoderVibes
+      </span>
+
+      <!-- No address and no Sign out: there is one person on this machine and
+           nothing to sign out of. What goes in their place is what the
+           titlebar can honestly say - that this is the local edition, and
+           that it answers here only. -->
+      <div class="console-titlebar-actions">
+        <span class="chip chip-none" title="This CoderVibes runs on this machine, for you, and refuses a request from anywhere else.">local</span>
+      </div>
+    </header>
+
+    <!-- No #console-gate and no #gate-page: the gate is the sign-in, the
+         pitch and the blog, and this edition has none of the three. The
+         console is what the page is, from the first paint. -->
+    <main class="console" id="console">
+      <!-- Four pages, and no workspace above them: there is nobody to be in
+           a room with, so there is nothing to switch between. -->
+      <aside class="app-sidebar" id="app-sidebar">
+        <nav class="sidebar-nav" aria-label="Pages">
+          <!-- Executors first, and what a bare address opens: the machines
+               reporting here and the one line that connects another. Until
+               that line has run somewhere the other three pages are empty,
+               so the first link is the one with something on it. -->
+          <a class="sidebar-link" href="/executors" data-page="executors">
+            <span class="sidebar-icon" aria-hidden="true">◆</span>
+            <span>Executors</span>
+          </a>
+          <!-- What the work cost and how it went. -->
+          <a class="sidebar-link" href="/performance" data-page="performance">
+            <span class="sidebar-icon" aria-hidden="true">▲</span>
+            <span>Performance</span>
+          </a>
+          <!-- One box over every session this installation has seen. -->
+          <a class="sidebar-link" href="/search" data-page="search">
+            <span class="sidebar-icon" aria-hidden="true">⌕</span>
+            <span>Search</span>
+          </a>
+          <!-- What the agents reach for, and how often each one fails. -->
+          <a class="sidebar-link" href="/tools" data-page="tools">
+            <span class="sidebar-icon" aria-hidden="true">⚒</span>
+            <span>Tools</span>
+          </a>
+          <!-- One session (`/activity/<id>`) has no link here: it is what a
+               search result and a machine's list of work open onto, not a
+               page somebody navigates to. -->
+        </nav>
+      </aside>
+
+      <!-- Whatever the address says: a page's list, or one thing on it. -->
+      <section class="console-main" id="console-main"></section>
+
+      <!-- The strip of sky along the bottom of the grid. Empty: the footer's
+           Contact and About us are the public site's, and this edition
+           serves no public site. -->
+      <div class="console-foot" id="console-foot"></div>
+    </main>
+
+    <!-- One modal at a time - console-session.js opens one to show a
+         session's whole prompt. See modal.js. -->
+    <div class="modal" id="app-modal" hidden></div>
+
+    <script type="module" src="/local.js"></script>
+  </body>
+</html>

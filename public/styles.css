@@ -1,0 +1,498 @@
+/*
+ * The palette, and the furniture every page shares.
+ *
+ * This file was five thousand lines of an in-browser IDE - an editor pane, a
+ * file tree, a terminal dock, a services view, a presence row, and a phone
+ * layout that rearranged all of it. None of that exists any more. What is left
+ * is what the console still stands on: the colours, the reset, the title bar,
+ * the buttons, the modal and the panel behind the mark.
+ *
+ * The colours stay here rather than moving into console.css so that the
+ * palette is one block in one file. Everything in console.css is written
+ * against these names and nothing there carries a colour of its own.
+ *
+ * Light only. There was a dark theme as well, chosen per browser and switched
+ * from the titlebar, and it went: two palettes is two sets of contrast to keep
+ * right for every new pane, and the console is a page people read by day.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Every ground is plain white. There were four greens here - a page, a
+     raised bar, a wash, a deeper pane - so that a terminal, its tab and the
+     chrome behind them read as three surfaces; the owner looked at the
+     result and asked for white, with the green kept to what is drawn on it:
+     the buttons and the outlines. So the four names stay, because the rules
+     that use them say which surface they are, and all four say white.
+     What separates a pane from the page now is its border. */
+  --bg: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-inset: #ffffff;
+  --bg-deep: #ffffff;
+  /* A hover and a chosen row are the one thing still allowed to differ from
+     the page, and they are grey rather than green: on white, a green wash
+     read as a state rather than a highlight. */
+  --bg-hover: #f2f2f2;
+  --bg-active: #e8e8e8;
+  /* Outlines keep the green. On white they are the only thing that ties a
+     card to the accent, so they lean a shade further into it than before. */
+  --border: #cfdcd2;
+  --border-strong: #a9bfae;
+  /* Text is black - not the near-black green it was, which on a white page
+     read as grey - and the dimmer steps are neutral greys for the same
+     reason: a green-tinted grey on white is a wash, not a colour. */
+  --text: #000000;
+  --text-dim: #4a4a4a;
+  --text-faint: #767676;
+  /* One step past faint: a hint under an empty pane, an idle dot. Quiet
+     enough to be missed on purpose. */
+  --text-faintest: #9a9a9a;
+  /* A bar that is not the one to look at. The comparison charts light one
+     bar per chart and draw the rest in this: a grey lighter than any text,
+     so the lit bar is the only colour on the chart and the grey ones are
+     still a length. */
+  --bar-rest: #d9d9d9;
+  /* Light green, for the bar that wins a comparison chart, at the owner's
+     ask. It was gold, on the reasoning that green is the accent and the
+     accent is what you press - but the charts now have a second colour to
+     tell apart (`--picked`, below), and against light blue the pair a reader
+     has to read as "winning" and "mine" want to be the two colours everybody
+     already knows, not gold and blue. Nothing on a chart is pressable, so
+     the confusion the gold avoided cannot arise here; it is kept lighter
+     than `--accent` so a bar never reads as a button anyway. `--best-ink` is
+     the same green taken down to where small text on white is legible, for
+     the word "best" beside the figure - a chart whose only answer is a hue
+     has no answer for a reader who does not see hues. */
+  --best: #7fbf8f;
+  --best-ink: #2f6b41;
+  /* Light cyan, for the option the reader picked in the filter at the top of
+     the Performance page. Not a judgement and deliberately not the winner's
+     green: it says "this is the one you came to look at", and the whole
+     point of showing it is that it is standing among its alternatives rather
+     than alone. Cyan rather than a blue because the trend's first series
+     line is blue (`--series-1`) and the two panels sit one above the other -
+     a picked bar and an unrelated line in the same hue on one screen is a
+     resemblance that means nothing. A row can be both picked and best, and
+     then the cyan wins the bar - it is the one you came to find - and the
+     word "best" beside the figure is what says it is also winning.
+     `--picked-ink` is the same hue taken down to where small text on white
+     is legible, for that word. */
+  --picked: #a3e3e8;
+  --picked-ink: #15707a;
+  /* Forest green. Deep enough to read as text on white and to mark the thing
+     you are meant to press; the classic #228b22 is a lawn, too bright for
+     either. It sits close to the ok green on purpose - the two share a hue,
+     and ok is the paler, washed one, so a pill and a button still tell apart. */
+  --accent: #2c6e49;
+  /* The lines of a chart split by something - one hue per group, in this
+     fixed order, never cycled (console-trend.js). The six validated
+     together on the white ground for colour-blind separation and the
+     normal-vision floor; three sit under 3:1 contrast, which is why every
+     chart that uses them also names its lines and has a table twin. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --accent-dim: #a9d3b6;
+  /* Text on a filled accent (or error) button, and on the paler accent-dim. */
+  --on-accent: #f4faf6;
+  --on-accent-dim: #000000;
+  /* The faintest accent there is: it was the wash behind a chosen capability
+     and a person's own line in a transcript; it is white now, like every
+     ground, and the name stays so those rules still say what they mark. */
+  --accent-wash: #ffffff;
+  /* The site's second colour, for emphasis: the press that is somebody's
+     move - Answer, Approve, Merge on a card that is waiting on a person,
+     Copy on the setup line - and, on the public pages, Sign in. Green is
+     every other button, so the one that asks for the reader is the one
+     colour on the page nothing else uses. The owner's orange (2026-09-14);
+     it was a deeper #c25a0c before, and this one is brighter than white
+     text likes at small sizes, so the labels on it are short and bold. */
+  --attention: #de6831;
+  --on-attention: #fff7f0;
+  --ok: #2f7d52;
+  --err: #b23a3a;
+
+  /* The three states as a set - a border, a wash and a text colour each, so a
+     notice, a pill and a bubble can all be built from the same three. */
+  --ok-border: #b6d6c2;
+  --ok-bg: #ffffff;
+  --ok-text: #226b43;
+  --err-border: #e8bcbc;
+  --err-bg: #fdf0f0;
+  --err-text: #96302f;
+  --warn-border: #e6d0a8;
+  --warn-bg: #fbf4e6;
+  --warn-text: #7d5a1c;
+  --diff-add-bg: #e6f4ea;
+  --diff-del-bg: #fbe9e9;
+
+  /* Five steps for a column of numbers being compared against each other,
+     best to worst (console-list.js). Pale enough that black text sits on
+     any of them and a table of them still reads as a table rather than as
+     a heat map with numbers on it; the middle step is barely there,
+     because the middle of a ranking is the part with nothing to say. The
+     ends are the diff wash, a shade further, so green-means-good on this
+     console is one green. */
+  --heat-1: #cfe9d8;
+  --heat-2: #e8f4ec;
+  --heat-3: #f4f4f2;
+  --heat-4: #fbeaea;
+  --heat-5: #f4cfcf;
+
+  /* Six services' logs, interleaved, told apart by colour. */
+  --tint-0: #2f5fd0;
+  --tint-1: #4a7a1f;
+  --tint-2: #96631a;
+  --tint-3: #7b4cc4;
+  --tint-4: #10707f;
+  --tint-5: #bc2f4c;
+
+  /* The signed-out page's top: a photograph of a night sky, and what has to
+     read over it. The ground is the sky's own darkest blue, so the band is
+     the right colour before the picture arrives and past its edges; the
+     text is near-white, dimmed by alpha rather than by a second grey, so it
+     dims to the sky and not to a colour of its own. The one dark surface in
+     a light palette, and it is a photograph, not a theme. */
+  --sky: #070b17;
+  --sky-text: #f3f5f9;
+  --sky-text-dim: rgba(243, 245, 249, 0.74);
+  --sky-line: rgba(243, 245, 249, 0.18);
+  --sky-line-strong: rgba(243, 245, 249, 0.34);
+  --sky-glass: rgba(243, 245, 249, 0.07);
+  --sky-glass-hover: rgba(243, 245, 249, 0.13);
+
+  --scrollbar: #c9c9c9;
+  --scrim: rgba(0, 0, 0, 0.35);
+  --shadow-soft: rgba(0, 0, 0, 0.12);
+  --shadow-strong: rgba(0, 0, 0, 0.18);
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --explorer-w: 240px;
+  --assistant-w: 420px;
+}
+
+/* ------------------------------------------------------------ the reset */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--on-accent-dim);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------------------------------------------------------- the titlebar */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+/* The mark. A wordmark: it is the one thing in this bar that is always in
+   the same place. It was a button that opened the navigation; the navigation
+   is a column beside the page now, so there is nothing for it to open. */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  /* The bar is a fixed height and this is the tallest thing in it; without
+     this the inline-flex box grows to the line box and shoves the row. */
+  line-height: 1;
+}
+
+/* Sized to the text rather than to a pixel value, so it stays in proportion
+   wherever the mark is used. */
+.logo-bolt {
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 auto;
+  fill: var(--accent);
+}
+
+.account-email {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  /* A link to the Account page, dressed as the address it always was. */
+  text-decoration: none;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-email:hover { color: var(--text); text-decoration: underline; }
+
+/* ------------------------------------------------------------- buttons */
+
+.primary-btn {
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.primary-btn:hover { filter: brightness(1.08); }
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.primary-btn.danger {
+  background: var(--err);
+  color: var(--on-accent-dim);
+}
+
+.ghost-btn {
+  padding: 7px 13px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.ghost-btn:hover { background: var(--border); color: var(--text); }
+.ghost-btn.danger:hover { border-color: var(--err); color: var(--err); background: none; }
+
+.ghost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------- modal */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--scrim);
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal-box {
+  width: 460px;
+  max-width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 18px 48px var(--shadow-strong);
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.modal-head button {
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.modal-head button:hover { background: var(--bg-hover); color: var(--text); }
+
+.app-modal-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app-modal-body {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.app-modal-subtitle {
+  margin: 0 0 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.app-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.app-modal-error {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--err-border);
+  border-radius: 6px;
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+}
+
+.modal-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.modal-field input,
+.modal-field select {
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-inset);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.modal-field input:focus,
+.modal-field select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+/* ---------------------------------------------------------- the phone */
+
+@media (max-width: 860px) {
+  body {
+    font-size: 14px;
+    /* dvh, not vh: a phone's toolbars come and go, and vh leaves the bottom of
+       the page under the browser chrome for the whole session. */
+    height: 100dvh;
+  }
+
+  .titlebar {
+    gap: 8px;
+    padding: 0 10px;
+    padding-top: env(safe-area-inset-top);
+    height: calc(46px + env(safe-area-inset-top));
+  }
+
+  /* The bar is the mark, where you are, and the way out. The address is the
+     first thing to go: it is the longest and the least useful of the three. */
+  .account-email {
+    display: none;
+  }
+
+  /* The buttons in the bar were around 20px tall - reachable with a
+     pointer, a guess with a thumb. */
+  .titlebar .ghost-btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* That display rule beats the `hidden` attribute, so without this a phone
+     showed Sign out to a visitor who was not signed in. */
+  .titlebar .ghost-btn[hidden] { display: none; }
+
+  /* 16px, or iOS zooms the page in on focus and never zooms back out. */
+  input[type="search"],
+  input[type="email"],
+  input[type="text"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  .modal {
+    padding: 10px;
+    align-items: flex-start;
+  }
+
+  .modal-box {
+    margin-top: 8vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
