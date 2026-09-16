@@ -24,7 +24,9 @@ curl -fsSL https://codervibes.io/local.sh | sh
 
 It asks before each step, and running it again is how you update
 (`--yes` answers everything; `--dir`, `--port`, `--no-setup`, `--no-start`
-if you need them).
+if you need them). `local.sh` at the root of this repository is the same
+script, byte for byte, if you would rather read it first or already have a
+clone.
 
 By hand, which is the same thing in four steps:
 

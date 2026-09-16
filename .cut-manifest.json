@@ -1,11 +1,12 @@
 {
-  "cutFrom": "33fd01d1de9482e98d38bcbbeb4359ecdcb862eb",
-  "cutAt": "2026-09-15T23:25:09.602Z",
+  "cutFrom": "bee02ae5e5fbaf244de3995b149133db9cbcf34e",
+  "cutAt": "2026-09-16T00:14:41.301Z",
   "files": [
     ".gitignore",
     "LICENSE",
     "README.md",
     "docs/local.md",
+    "local.sh",
     "package.json",
     "public/api.js",
     "public/apple-touch-icon.png",
