@@ -125,12 +125,14 @@ async function runCall(context, name, args, session) {
     // (mcp.js): what the agent called, whether it worked and how long it
     // took, from the side that served it. It is what the Tools page counts.
     //
-    // Nothing else can supply it. Claude Code's export names every MCP call
-    // `mcp_tool` whichever tool it was, and the hooks' copy of this one is
-    // the harness's report of a call this app served itself - a mirror, and
-    // left out for that reason (tool-stats.js `isMirror`). Without this the
-    // page said "no tools used" to a person whose agent had just used three
-    // of ours, which is the opposite of what the page is for.
+    // Nothing else can supply it, and nothing else is allowed to: the
+    // harness exports its own copy of this same call, and that copy is
+    // passed over as it arrives (telemetry-ingest.js, `collab`) so that one
+    // call is one span. This is the copy that stays because it is the one
+    // that knows what happened - whether the tool refused, and how long the
+    // serving took. Without any of it the Tools page said "no tools used"
+    // to a person whose agent had just used three of ours, which is the
+    // opposite of what the page is for.
     outcome = await withSpan(
       "tool.call",
       {

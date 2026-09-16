@@ -25,9 +25,10 @@ export function searchPage({ state, api, render, go, pathFor }) {
   const wants = () => state.page === "search";
 
   /**
-   * The ask in the address: `/search?q=...&in=trail&from=...&to=...` - the
-   * question, which of the two things is searched, and the one bar of the
-   * histogram that was pressed, or nothing of each.
+   * The ask in the address: `/search?q=...&in=trail&machine=...&from=...&to=...`
+   * - the question, which of the two things is searched, the machine the
+   * search is narrowed to, and the one bar of the histogram that was
+   * pressed, or nothing of each.
    */
   function searchAsk(search = location.search) {
     const params = new URLSearchParams(search);
@@ -38,16 +39,23 @@ export function searchPage({ state, api, render, go, pathFor }) {
       // a plain search rather than as a page with nothing on it and no tab
       // to leave by.
       mode: params.get("in") === "trail" && hasAccessTrail() ? "trail" : "sessions",
+      // One machine's sessions: what a machine's page links to, since the
+      // page itself has nowhere to send somebody who wants the work
+      // (console-connect.js `setupDetail`). In the address like the
+      // question, so the chip that says the search is narrowed survives a
+      // reload and the way out of it is the back button.
+      machine: params.get("machine")?.trim() || null,
       from: Number(params.get("from")) || null,
       to: Number(params.get("to")) || null,
     };
   }
 
   /** The address of an ask - the same spelling wherever a search is linked from. */
-  function searchPath({ q = "", mode = "sessions", from = null, to = null } = {}) {
+  function searchPath({ q = "", mode = "sessions", machine = null, from = null, to = null } = {}) {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (mode === "trail") params.set("in", "trail");
+    if (machine) params.set("machine", machine);
     if (from) params.set("from", String(from));
     if (to) params.set("to", String(to));
     const query = params.toString();
@@ -71,7 +79,7 @@ export function searchPage({ state, api, render, go, pathFor }) {
     // A new question is a new conversation: the chat was about the last one.
     if (state.search.chat.about !== ask.q) state.search = { ...state.search, chat: { about: ask.q, turns: [] } };
     const { range, provider } = state.search;
-    const read = ask.mode === "trail" ? api.searchTrail(ask.q, { range, from: ask.from, to: ask.to }) : api.search(ask.q, { range, provider, from: ask.from, to: ask.to });
+    const read = ask.mode === "trail" ? api.searchTrail(ask.q, { range, from: ask.from, to: ask.to }) : api.search(ask.q, { range, provider, machine: ask.machine, from: ask.from, to: ask.to });
     const usage = !ask.q && ask.mode === "sessions" ? loadSearchStats() : Promise.resolve();
     loadingSearch = Promise.all([
       read.then(
@@ -157,9 +165,12 @@ export function searchPage({ state, api, render, go, pathFor }) {
         failed: current ? state.search.failed : null,
         chat: state.search.chat.about === ask.q ? state.search.chat : null,
         stats: state.search.stats.range === state.search.range ? state.search.stats : null,
-        // A new question starts from the whole range: the bar pressed was
-        // pressed for the last one.
-        onSearch: (q, mode) => go(searchPath({ q, mode })),
+        // A new question keeps the machine: somebody who came from a
+        // machine's page and then typed a word still means that machine's
+        // work. The bar pressed is dropped, though - it was pressed for
+        // the last question.
+        onSearch: (q, mode) => go(searchPath({ q, mode, machine: ask.machine })),
+        onMachine: () => go(searchPath({ ...ask, machine: null, from: null, to: null })),
         onMode: (mode) => go(searchPath({ ...ask, mode, from: null, to: null })),
         onBucket: (bucket, mode = ask.mode) => go(searchPath({ ...ask, mode, from: bucket?.from ?? null, to: bucket?.to ?? null })),
         onKind: (kind) => {

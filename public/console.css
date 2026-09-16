@@ -1061,11 +1061,20 @@
 /* The way to the code: the GitHub mark, at the size of the band's text and
    in its colour, where "Source: ... MIT." used to be a line of small print.
    A link with a picture in it, so it needs a hit area of its own. */
+/* The mark and its sentence, on one line under the command. */
+.frame-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 0;
+  color: var(--text-dim);
+}
+
 .frame-github {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  margin-top: 18px;
+  margin-top: 0;
   padding: 4px;
   border-radius: 8px;
   color: var(--text-dim);
@@ -2587,10 +2596,15 @@
   border-radius: 2px;
   background: var(--accent);
 }
-.search-bucket-chip {
+.search-bucket-chip,
+.search-facet-chip {
   cursor: pointer;
   font: inherit;
   font-size: 12px;
+}
+/* The chip that says a search is narrowed to one machine, under the box. */
+.search-facet-row {
+  margin: -4px 0 10px;
 }
 .search-histogram-bars {
   display: flex;

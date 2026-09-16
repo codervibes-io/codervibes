@@ -278,6 +278,14 @@ test("a session reported with no credential reaches every page", async () => {
   // here, which is what nearly every session on a laptop is.
   assert.equal(found.session.where, "external");
 
+  // It is also found by the name of the tool that ran, as the harness
+  // showed it: this app records a `Bash` as `run_command` (the row above
+  // and the Tools page below both say so), and a person who searched for
+  // what was on their screen got nothing at all until both names were
+  // words of the document (search.js `HARNESS_NAMES`).
+  const byTool = await call("/api/search?q=Bash&range=all&kind=session");
+  assert.ok(byTool.body.hits.some((hit) => hit.session?.id === sessionId), `searching for Bash found ${byTool.body.hits.length} sessions`);
+
   // Tools: Bash is a tool the harness runs itself rather than one this app
   // lent it, so it is the native line rather than a row (tool-stats.js) -
   // but it is counted, which is what the page is for.
@@ -334,6 +342,51 @@ test("three machines are seated, the fourth is told why not, and forgetting one 
   // happened.
   const its = await call(`/api/sessions/${onBoxTwo.body.session}`);
   assert.equal(its.status, 200, "forgetting a machine took its sessions with it");
+});
+
+test("a machine's page has somewhere to send you: a search takes one machine and answers with its sessions alone", async () => {
+  // A second machine with work on it, so that "this machine's sessions" is
+  // a question with a wrong answer available. box-4 is seated already, by
+  // the test above.
+  const elsewhere = await post("/api/harness/session", {
+    events: [
+      { event: "start", session: "local-5", repo: "git@github.com:ada/engine.git", branch: "main", machine: "box-4", platform: "" },
+      { event: "prompt", session: "local-5", input: { session_id: "local-5", prompt: "Tidy the changelog" } },
+      { event: "end", session: "local-5", input: { session_id: "local-5", reason: "exit" } },
+    ],
+  });
+  assert.equal(elsewhere.status, 200, JSON.stringify(elsewhere.body));
+  const onBoxFour = elsewhere.body.noted[0].session;
+
+  // The link a machine's page draws (console-connect.js `setupDetail`):
+  // the machine's id and no question at all, since Search opens
+  // unfiltered. Before this there was no such link and no such facet, so
+  // a machine's page said "1 session" and ended there.
+  const mine = await eventually("the machine's sessions are indexed", async () => {
+    const answer = await call("/api/search?machine=laptop%3AAdas-MBP&range=all");
+    return answer.body.hits?.length ? answer.body : null;
+  });
+  assert.deepEqual(mine.hits.map((hit) => hit.session?.id), [sessionId], "what ran on this machine, and nothing else");
+  // With the name on it: the link carries an id, and the chip that says
+  // what the list is narrowed to should say what the reader calls it.
+  assert.deepEqual(mine.machine, { id: "laptop:Adas-MBP", name: "Adas-MBP" });
+
+  const theirs = await eventually("the other machine's session is indexed", async () => {
+    const answer = await call("/api/search?machine=laptop%3Abox-4&range=all");
+    return answer.body.hits?.length ? answer.body : null;
+  });
+  const onIt = theirs.hits.map((hit) => hit.session?.id);
+  assert.ok(onIt.includes(onBoxFour), `box-4's own session is on its list: ${onIt}`);
+  assert.ok(!onIt.includes(sessionId), "and this machine's is not");
+
+  // A question narrows inside the machine rather than replacing it.
+  const asked = await call("/api/search?q=idempotent&machine=laptop%3Abox-4&range=all");
+  assert.deepEqual(asked.body.hits, [], "the deploy session is not box-4's answer");
+  // And a machine nothing ran on is an empty list with the id on the chip,
+  // not a page quietly showing everything.
+  const gone = await call("/api/search?machine=laptop%3Anever&range=all");
+  assert.deepEqual(gone.body.hits, []);
+  assert.deepEqual(gone.body.machine, { id: "laptop:never", name: null });
 });
 
 test("the addresses this edition serves are its own, and the ones it does not are gone", async () => {
@@ -474,6 +527,56 @@ test("a git host connected with a token makes a merge a fact this edition knows"
   assert.equal((await call(`/api/sessions/${glSession}`)).body.session.outcome, "merged", "the record is what happened, and stays");
 });
 
+test("a shell that exports to this installation does not make this installation export to itself", async () => {
+  // Step 5 of the installer writes OTEL_EXPORTER_OTLP_ENDPOINT=<origin>/otlp
+  // into ~/.codervibes/env and makes .profile, .bashrc and .zshrc source it,
+  // for the coding agents on the machine. So the *next* shell has it, and
+  // the next `node server/local.js` - the re-run of the installer, or the
+  // "start again" line it printed - is started with it. telemetry.js reads
+  // the variable as it loads and asks for an OTLP exporter the open-source
+  // cut does not ship, so the second run of the installer said "Stopped it."
+  // and started a server that died on ERR_MODULE_NOT_FOUND: the console a
+  // person had just been reading went away and the script said nothing.
+  const port = await freePort();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "codervibes-exporting-"));
+  const started = spawn(process.execPath, ["server/local.js"], {
+    cwd: root,
+    env: bare({
+      PORT: String(port),
+      CODERVIBES_DATA_DIR: home,
+      // What the env file the installer wrote holds, verbatim - pointed at a
+      // port nothing is on, because nothing should try to reach it.
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:1/otlp",
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/json",
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Bearer nothing",
+      CLAUDE_CODE_ENABLE_TELEMETRY: "1",
+    }),
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let said = "";
+  started.stderr.on("data", (chunk) => {
+    said += chunk;
+  });
+  try {
+    const deadline = Date.now() + 20_000;
+    let up = false;
+    while (Date.now() < deadline && !up) {
+      if (started.exitCode !== null) break;
+      up = await fetch(`http://127.0.0.1:${port}/healthz`).then((res) => res.status === 200, () => false);
+      if (!up) await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    assert.equal(up, true, `it did not come up: ${said}`);
+    assert.doesNotMatch(said, /ERR_MODULE_NOT_FOUND/);
+    // And it says nothing about it: the person set that variable for their
+    // agents, which still read it, and a line about a variable they never
+    // typed at this server explains nothing.
+    assert.doesNotMatch(said, /OTEL/);
+  } finally {
+    started.kill("SIGTERM");
+    await fs.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
 test("it refuses to start on an address other machines can reach", async () => {
   // Refused rather than ignored: somebody who set BIND_HOST meant it, and a
   // console with no sign-in on 0.0.0.0 is the one failure this edition
@@ -573,6 +676,26 @@ test("neither file links to a page, a panel or a sign-in this edition does not h
   assert.match(entry, /readAlways: \(\) => \[api\.session\(\), api\.executors\(\)\]/);
   assert.ok(entry.includes("api.gitHosts(") === false, "the entry reads the hosts through its page module, not itself");
   assert.match(gitHostsPage, /api\s*\n?\s*\.gitHosts\(\)/, "which is where the read is");
+});
+
+test("the export variables are dropped before a module that reads them is loaded, and the exporter is therefore unreachable", async () => {
+  // The order is the whole of it. Every import in server/local.js is dynamic
+  // so that the environment is settled before anything reads it; the same
+  // reasoning says the unsetting has to come before the first of them, or
+  // telemetry.js has already read the variable and asked for the package.
+  const unset = serverEntry.indexOf("delete process.env[name]");
+  assert.ok(unset > 0, "the entry drops the OTEL_* family");
+  assert.match(serverEntry, /name\.startsWith\("OTEL_"\) \|\| name === "CLAUDE_CODE_ENABLE_TELEMETRY"/);
+  assert.ok(unset < serverEntry.indexOf("await import("), "it happens before the first module that could read them");
+
+  // Why it matters that it is unreachable rather than trimmed: telemetry.js
+  // asks for the OTLP exporter behind that variable, indented, so the closure
+  // does not count it as a dependency and the cut does not ship it
+  // (scripts/lib/closure.mjs `loadTimePackageImports`). With the variable
+  // always empty here the branch cannot be taken, which is the answer to
+  // "should the package ship anyway": no - the local edition never exports.
+  const telemetry = await read("server", "telemetry.js");
+  assert.match(telemetry, /^if \(OTLP_ENDPOINT\) \{\n {2}const \{ OTLPTraceExporter \} = await import\("@opentelemetry\/exporter-trace-otlp-http"\);/m);
 });
 
 test("every predicate an edition can turn off is on until somebody turns it off", () => {

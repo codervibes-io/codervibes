@@ -11,13 +11,22 @@
 // month: between twenty and thirty bars, which is what fits across a
 // pane and is still one bar per unit a person thinks in. Over "all time"
 // - which has no width until the data says one - the same holds with
-// wider slices: a week over a year or two, a month beyond that.
+// wider slices: a week over a year or two, a month beyond that, and with
+// narrower ones at the other end. An installation set up this morning has
+// a range of minutes, and an hour-wide slice made that one solid block
+// across the pane with the same minute written three times under it: a
+// chart that says nothing about when, and reads as one that failed to
+// draw. Ten minutes over an afternoon and a minute over the half hour
+// keep it a chart at that size too.
 
-const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** The bucket width for a range: a day's hours, a week's quarter-days, a month's days, a year's weeks. */
+/** The bucket width for a range: a half hour's minutes, an afternoon's ten-minutes, a day's hours, a week's quarter-days, a month's days, a year's weeks. */
 export function bucketFor(rangeMs) {
+  if (rangeMs <= 30 * MINUTE) return MINUTE;
+  if (rangeMs <= 4 * HOUR) return 10 * MINUTE;
   if (rangeMs <= DAY) return HOUR;
   if (rangeMs <= 7 * DAY) return 6 * HOUR;
   if (rangeMs <= 120 * DAY) return DAY;

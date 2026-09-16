@@ -68,17 +68,21 @@ export function credentials(minted) {
  *
  * There is nothing to configure and nothing to stop, because this app did
  * not start it - so the page is what it has done and where, and the way to
- * see the work itself is the sessions, on Home. A setup that has gone quiet
- * keeps its page for a month and then stops being listed: it is built from
- * its sessions, so it lasts exactly as long as they do.
+ * see the work itself is Search, narrowed to this machine
+ * (`/search?machine=<id>`). That link is the whole of the way out of this
+ * page: it said "1 session" and named the repository in plain text, with
+ * nothing to press, so a person who wanted to see the session it had run
+ * had nowhere to go from the page that told them it existed. A setup that
+ * has gone quiet keeps its page for a month and then stops being listed:
+ * it is built from its sessions, so it lasts exactly as long as they do.
  *
  * @param {object} setup a row from /api/executors of kind "setup"
  * @param {object} args
  * @param {(path: string) => void} args.onOpen
  * @param {(page: string, id?: string) => string} args.pathFor
- * @param {boolean} [args.sessions] whether to offer the way to its sessions.
- *   True here, because the console that has always drawn this has a page
- *   that lists them; false for a shell whose page set has none, since a
+ * @param {boolean} [args.sessions] whether to offer the way to its sessions
+ *   - Search, narrowed to this machine. True in both editions, which both
+ *   have that page; false for a shell whose page set has none, since a
  *   button that goes nowhere is worse than no button.
  * @param {(() => Promise|void)|null} [args.onForget] what Forget does, for an
  *   installation that seats a fixed number of machines and where forgetting
@@ -146,7 +150,13 @@ export function setupDetail(setup, { onOpen, pathFor, sessions = true, onForget 
   pane.append(facts);
 
   const actions = el("div", "detail-actions");
-  if (sessions) actions.append(button("ghost-btn", "See its sessions", () => onOpen(pathFor("home"))));
+  // Its sessions, and nothing else's: the button used to open the whole
+  // listing, which on an installation with more than one machine is the
+  // work of every machine there is and the reader's own job to find this
+  // one's in.
+  if (sessions && setup.machine?.id) {
+    actions.append(button("ghost-btn", "See its sessions", () => onOpen(`${pathFor("search")}?machine=${encodeURIComponent(setup.machine.id)}`)));
+  }
   if (onForget) {
     // It asks, because it is not undoable from here and because the row it
     // removes is a month of a machine's history on the page. What it does

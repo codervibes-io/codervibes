@@ -147,9 +147,10 @@ const MCP_PREFIX = "mcp__codervibes__";
 
 /**
  * What kind of tool the harness ran, from its name: this app's own
- * (`collab` - mcp.js records the same call with more on it, and the Tools
- * page counts that one), a server on the person's own MCP list (`mcp`), or
- * the harness's own reading, editing and running (`harness`).
+ * (`collab` - mcp.js and mcp-local.js record the same call with more on it
+ * as they serve it, so the export's copy of one of these is not kept at
+ * all), a server on the person's own MCP list (`mcp`), or the harness's own
+ * reading, editing and running (`harness`).
  */
 export function toolKindOf(name) {
   const text = String(name ?? "");
@@ -571,6 +572,28 @@ async function fold(who, record, event) {
       const ok = attrs.success == null ? true : Boolean(attrs.success);
       if (isSkill && hooked.has(record.id)) {
         // The hook recorded this skill, by name, before it ran.
+        sessionLog.touch(record.id, at);
+        return null;
+      }
+      if (!isSkill && toolKindOf(named) === "collab" && hooked.has(record.id)) {
+        // A call to one of this app's own tools, on a session the hooks are
+        // reporting - so this app served the call and recorded it *on this
+        // same session* as it did (mcp.js and mcp-local.js join the call to
+        // the session whose hook announced it), with the repo, the task and
+        // whether the tool refused on it, none of which the export knows.
+        // Two spans for one call, and the two pages that count them
+        // disagreed: the Tools page dropped this copy (tool-stats.js
+        // `isMirror`) and the session's own counts kept both, so a session
+        // that made three MCP calls wore a chip saying five tool calls.
+        //
+        // Dropped here rather than filtered on the way out, because a span
+        // nothing should ever count is a span not worth keeping: the one
+        // that stays is the one that knows more.
+        //
+        // Only with the hooks, because they are what makes the two copies
+        // land on one session. A harness that exports and does not hook has
+        // its MCP calls recorded against the endpoint's own connection
+        // record, and this copy is the only one this session will ever see.
         sessionLog.touch(record.id, at);
         return null;
       }
@@ -1071,8 +1094,15 @@ export function toolDetailOf(response) {
  * What the agent said last, from the lines of its transcript the `stop`
  * hook sends: Claude Code's transcript is JSONL, one `{type: "assistant",
  * message: {content: [...]}}` line per message, and the last line with a
- * text block on it is the answer to the turn. Lines that will not parse
- * are skipped, not fatal - a transcript format is somebody else's to change.
+ * text block on it is the answer to the turn. The last line is not that
+ * line: a turn is several assistant entries - a thought, each tool_use, the
+ * answer - so the tail usually ends on a tool call with no text in it, and
+ * reading the last entry rather than the last text would report the turn's
+ * first sentence or nothing at all. Lines that will not parse are skipped,
+ * not fatal - a transcript format is somebody else's to change.
+ *
+ * Whether the answer is in the file yet is a separate question, and not one
+ * this can answer: see the `end` event in `noteHook`.
  */
 export function lastSaidOf(lines) {
   const entries = (Array.isArray(lines) ? lines : []).map((entry) => {
@@ -1286,6 +1316,8 @@ function agentOf(body) {
  *
  *   `end` - the session is over. Without it a session sits live until the
  *   idle sweep, and "working now" means "worked in the last quarter hour".
+ *   It carries the transcript tail too, because by now the file is finished
+ *   and at `stop` it may not have been (below).
  *
  *   `file` - one path an edit landed on; what the hook sent before `done`
  *   existed, kept so an old settings file goes on working.
@@ -1313,6 +1345,26 @@ export async function noteHook(who, { session, event = null, at: when = null, re
 
   switch (event) {
     case "end":
+      // What the agent actually finished on, when the `stop` hook did not
+      // get it. Claude Code fires Stop and appends the turn's last assistant
+      // entry to the transcript file in whichever order it likes: in a
+      // `claude -p` run - a stranger's first session - the hook read the
+      // file a beat early, so the last entry with any text in it was a
+      // mid-turn line ("I'll load those tool schemas first.") and that is
+      // what the session said the agent answered. By the time the session
+      // ends the file is complete, so the same tail is read again and the
+      // real answer put on the log if it is not the one already there.
+      if (transcript) {
+        const said = lastSaidOf(transcript);
+        const already = sessionEvents.last(record.id, "agent_message_chunk", { own: true })?.text ?? null;
+        if (said && said !== already) {
+          sessionEvents.append(record.id, "agent_message_chunk", { text: said }, { at });
+          // And the turn that ended on a question is one somebody has to
+          // come back to (friction.js `isHandBack`) - a fact read off the
+          // last line, which until now was the wrong line.
+          if (friction.isHandBack(said) && !friction.isHandBack(already)) sessionLog.handedBack(record.id);
+        }
+      }
       sessionLog.end(record.id);
       openCalls.delete(record.id);
       hooked.delete(record.id);

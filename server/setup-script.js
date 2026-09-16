@@ -56,8 +56,9 @@
 // and shows the words to the session's owner and the people on its repo,
 // the shape to everyone else - the rule a resident's transcript already
 // has. On top of the event: which repository and machine at the start,
-// and the transcript's last lines at a stop, since only the machine has
-// the file.
+// and the transcript's last lines at a stop and again at the end, since
+// only the machine has the file - and the answer to a turn is sometimes
+// written to it after the stop hook has already run.
 //
 // **It works out where it is, and says so.** Nobody should have to tell it
 // they are in a sandbox. The platforms leave marks on their machines (e2b
@@ -263,9 +264,10 @@ umask 022`)}
 # The hook. Called as \`report <event>\` with the harness's JSON on stdin,
 # and posts that JSON whole as \`input\`, under the event's name and the
 # session id read off it. A start adds the checkout and the machine; a stop
-# adds the transcript's last assistant lines, which only this machine can
-# read. The body goes over stdin, not an argument: a tool's response can be
-# bigger than an argument may be.
+# and an end add the transcript's last assistant lines, which only this
+# machine can read - twice, because the harness may write the answer to the
+# turn after it has fired the stop hook. The body goes over stdin, not an
+# argument: a tool's response can be bigger than an argument may be.
 #
 # Nothing here waits on the network. The harness runs a hook inside the
 # tool call and waits for it to exit, so a hook that posts is a hook that
@@ -295,14 +297,14 @@ case "$event" in
     repo=$(git remote get-url origin 2>/dev/null || true)
     branch=$(git branch --show-current 2>/dev/null || true)
     extra=",\\"repo\\":\\"$repo\\",\\"branch\\":\\"$branch\\",\\"machine\\":\\"$machine\\",\\"platform\\":\\"$platform\\"" ;;
-  stop)
+  stop|end)
     path=$(printf %s "$input" | sed -n 's/.*"transcript_path" *: *"\\([^"]*\\)".*/\\1/p' | head -n 1)
     lines=""
     if [ -n "$path" ] && [ -r "$path" ]; then
       lines=$(grep -F '"type":"assistant"' "$path" 2>/dev/null | tail -n 5 | tr '\\n' ',')
     fi
     extra=",\\"transcript\\":[\${lines%,}]" ;;
-  end|prompt|tool|done|file|subagent) ;;
+  prompt|tool|done|file|subagent) ;;
   *) exit 0 ;;
 esac
 spool="$HOME/.codervibes/spool"
@@ -510,24 +512,42 @@ settle_json "$HOME_DIR/.claude.json" "$(mcp_block)" "Claude Code MCP" "$NOTE_CLA
 # ------------------------------------------------------------------ Codex
 # An [otel] table in config.toml; the endpoint is the whole logs path, since
 # its exporter does not append one. Prompts are exported, like Claude Code's.
-# The table is added once and left alone afterwards, and one somebody wrote
-# themselves is theirs.
+# A table somebody wrote themselves is theirs and is never touched.
+#
+# Ours is known by the marker line above it, not by the address in it. Every
+# other harness here is rewritten on every run, so a re-run with a different
+# --port re-points them all; Codex was recognised by "does it name this
+# origin", which is false of its own table the moment the origin changes -
+# so the port that moved left Codex exporting to the old one. Nothing fails
+# when an export goes nowhere, so what a person saw was Codex quietly
+# missing from a console that had everything else on it.
 CODEX="$HOME_DIR/.codex/config.toml"
+CODEX_MARK="# CoderVibes: send this Codex's telemetry to"
 mkdir -p "$HOME_DIR/.codex"
-if [ -f "$CODEX" ] && grep -q '^\\[otel\\]' "$CODEX" 2>/dev/null; then
-  if grep -q "$ORIGIN/otlp/v1/logs" "$CODEX"; then
-    echo "  Codex: $CODEX already has this app's [otel] table$NOTE_CODEX"
-  else
-    echo "  Codex: $CODEX has an [otel] table of its own; not touched. To report here, point it at $ORIGIN/otlp/v1/logs${tokenless ? "" : " with the header in ~/.codervibes/env"}." >&2
-  fi
-else
+write_otel() {
   cat >> "$CODEX" <<EOF
 
-# CoderVibes: send this Codex's telemetry to $ORIGIN (codervibes), prompts included.
+$CODEX_MARK $ORIGIN (codervibes), prompts included.
 [otel]
 log_user_prompt = true
 exporter = { otlp-http = { endpoint = "$ORIGIN/otlp/v1/logs", protocol = "json"${tokenless ? "" : `, headers = { Authorization = "Bearer $TOKEN" }`} } }
 EOF
+}
+if [ -f "$CODEX" ] && grep -q '^\\[otel\\]' "$CODEX" 2>/dev/null; then
+  if grep -q "$ORIGIN/otlp/v1/logs" "$CODEX"; then
+    echo "  Codex: $CODEX already has this app's [otel] table$NOTE_CODEX"
+  elif grep -qF "$CODEX_MARK" "$CODEX"; then
+    # Ours, pointing at where this app used to be. Cut from the marker to
+    # the next table header and written again, the way the MCP table below
+    # is - nothing else in the file is read or moved.
+    awk -v mark="$CODEX_MARK" 'BEGIN { skip = 0 } index($0, mark) == 1 { next } /^\\[/ { skip = ($0 == "[otel]") } !skip { print }' "$CODEX" > "$CODEX.cv-tmp" && mv "$CODEX.cv-tmp" "$CODEX"
+    write_otel
+    echo "  Codex: pointed its [otel] table at $ORIGIN$NOTE_CODEX"
+  else
+    echo "  Codex: $CODEX has an [otel] table of its own; not touched. To report here, point it at $ORIGIN/otlp/v1/logs${tokenless ? "" : " with the header in ~/.codervibes/env"}." >&2
+  fi
+else
+  write_otel
   echo "  Codex: added [otel] to $CODEX$NOTE_CODEX"
 fi
 ${withMcp(`# Its MCP servers are tables in the same file. Ours is replaced on every
@@ -622,7 +642,11 @@ esac
 write_env
 
 if [ -n "$answer" ]; then
-  echo "Done. $MACHINE is on $ORIGIN/executors\${PLATFORM:+ as an $PLATFORM machine}; start a session in any of them and it appears there${mcp ? ", with $ORIGIN's tools as the MCP server 'codervibes'" : ""}."
+  # "as a machine on e2b", not "as an $PLATFORM machine": the platform is a
+  # word the server picks (container, sandbox, e2b, niteshift), so the
+  # article in front of it cannot be written here - and the line a stranger's
+  # first run ends on said "as an container machine".
+  echo "Done. $MACHINE is on $ORIGIN/executors\${PLATFORM:+ as a machine on $PLATFORM}; start a session in any of them and it appears there${mcp ? ", with $ORIGIN's tools as the MCP server 'codervibes'" : ""}."
 else
   echo "Done, but $ORIGIN could not be reached to say so - check ${tokenless ? "that it is running" : "the token and the network"}. Sessions will still try to report."
 fi

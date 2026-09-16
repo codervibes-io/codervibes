@@ -428,3 +428,81 @@ test("a DELETE ends the session, and the next call on it is told to initialize a
   assert.ok(again.session);
   assert.notEqual(again.session, mcpSession);
 });
+
+test("a call the agent makes here is one tool call on the session, not two", async () => {
+  // Three things report the same call on a laptop: the hooks (the `tool` and
+  // `done` events, which write the transcript row), this endpoint (the span
+  // it records as it serves the call), and Claude Code's own OpenTelemetry
+  // export, which the setup line points at this app as well. The export's
+  // copy knows least - it cannot even name the tool - so it is passed over
+  // when the hooks are reporting (telemetry-ingest.js). Before that, a
+  // session that made three calls wore a chip that said five tool calls,
+  // while the Tools page, which drops one copy of its own, said three.
+  const at = Date.now();
+  const hooks = await post("/api/harness/session", {
+    events: [
+      { event: "start", session: "mcp-local-counted", repo: "git@github.com:ada/engine.git", branch: "main", machine: "Adas-MBP", platform: "" },
+      { event: "prompt", session: "mcp-local-counted", input: { session_id: "mcp-local-counted", prompt: "Ask what was done here before" } },
+      { event: "tool", session: "mcp-local-counted", at, input: { session_id: "mcp-local-counted", tool_name: "mcp__codervibes__discover", tool_use_id: "t-one", tool_input: { query: "deploy" } } },
+    ],
+  });
+  assert.equal(hooks.status, 200, JSON.stringify(hooks.body));
+  const id = hooks.body.noted[0].session;
+
+  const opened = await rpc({
+    jsonrpc: "2.0",
+    id: 60,
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+  });
+  const called = await rpc(
+    { jsonrpc: "2.0", id: 61, method: "tools/call", params: { name: "discover", arguments: { query: "deploy" } } },
+    { session: opened.session },
+  );
+  assert.equal(called.body.result.isError, undefined, said(called.body.result));
+  await post("/api/harness/session", {
+    events: [{ event: "done", session: "mcp-local-counted", at: at + 40, input: { session_id: "mcp-local-counted", tool_name: "mcp__codervibes__discover", tool_use_id: "t-one", tool_response: [{ type: "text", text: "1 hit" }] } }],
+  });
+
+  // And the export's copy of the same call, in the next batch, which is how
+  // it arrives on a real machine: `mcp_tool` and nothing else to say which.
+  const value = (v) => ({ stringValue: String(v) });
+  const exported = await post("/otlp/v1/logs", {
+    resourceLogs: [{
+      resource: { attributes: [{ key: "service.name", value: value("claude-code") }] },
+      scopeLogs: [{
+        scope: { name: "com.anthropic.claude_code" },
+        logRecords: [{
+          timeUnixNano: String((at + 40) * 1_000_000),
+          body: value("claude_code.tool_result"),
+          attributes: [
+            { key: "event.name", value: value("claude_code.tool_result") },
+            { key: "event.timestamp", value: value(new Date(at + 40).toISOString()) },
+            { key: "session.id", value: value("mcp-local-counted") },
+            { key: "tool_name", value: value("mcp_tool") },
+            { key: "success", value: { boolValue: true } },
+            { key: "duration_ms", value: { intValue: "40" } },
+          ],
+        }],
+      }],
+    }],
+  });
+  assert.equal(exported.status, 200, JSON.stringify(exported.body));
+
+  const detail = await get(`/api/sessions/${id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.session.counts.tools, 1, "the chip counts the call once");
+  assert.deepEqual(
+    detail.body.spans.filter((span) => span.name === "tool.call").map((span) => span.attrs["cv.tool.name"]),
+    ["discover"],
+    "one call, one span - and the one that stays is the one this app served",
+  );
+
+  // The transcript is the hooks' row and nothing beside it: the endpoint
+  // writes no line of its own onto a session they are already writing.
+  const events = await get(`/api/sessions/${id}/events`);
+  assert.deepEqual(
+    events.body.events.filter((entry) => entry.kind === "tool_call").map((entry) => entry.tool),
+    ["discover"],
+  );
+});

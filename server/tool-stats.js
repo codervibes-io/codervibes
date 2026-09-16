@@ -99,6 +99,11 @@ export function isNative(name, kind) {
  * such call were dropped. What that cost was the whole answer: the Tools
  * page listed this app's own tools for invited agents and for nobody else,
  * so a person whose agent had just used three of them read "no tools used".
+ *
+ * Nothing writes one of these any more - the harness's copy of a call this
+ * app served is passed over as it arrives (telemetry-ingest.js), because the
+ * session's own counts were adding both and no page wants two. This stays
+ * for the ones already in the store, which outlive the change by a month.
  */
 export function isMirror(span) {
   const attrs = span.attrs ?? {};

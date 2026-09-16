@@ -327,8 +327,9 @@ export function executorsList({ executors, ingest, ingestFailed = null, priced =
  *   the page of a kind this module does not draw - a resident agent's, a
  *   vendor's. Null for a shell that has neither.
  * @param {boolean} [opts.sessionsPage] whether this shell has a page that
- *   lists a machine's sessions to send somebody to. The full console does;
- *   a shell whose four pages do not must not draw a button to one.
+ *   lists a machine's sessions to send somebody to - Search, narrowed to
+ *   the machine. Both editions have it; a shell whose pages do not must
+ *   not draw a button to one.
  * @param {((executor: object) => Promise|void)|null} [opts.onForget] what
  *   Forget does on a machine's page, where there is a cap and forgetting is
  *   how a place comes free. Null draws no button - see console-connect.js.

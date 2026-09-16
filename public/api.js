@@ -231,10 +231,12 @@ export const api = {
    * Search: the best sessions, connectors, tools and skills for a question
    * over the sessions' `range`, with the histogram of when the matching
    * sessions were; `from`/`to` (ms) narrow the list to one of its bars, and
-   * `provider` to the sessions done on one vendor's models.
+   * `provider` to the sessions done on one vendor's models and `machine` to
+   * the sessions one machine ran - which is how a machine's page links to
+   * its work.
    */
-  search: (q, { kind = "", provider = null, range = "all", from = null, to = null } = {}) =>
-    listing(`/api/search?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}&range=${encodeURIComponent(range)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
+  search: (q, { kind = "", provider = null, machine = null, range = "all", from = null, to = null } = {}) =>
+    listing(`/api/search?q=${encodeURIComponent(q)}&kind=${encodeURIComponent(kind)}&range=${encodeURIComponent(range)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}${machine ? `&machine=${encodeURIComponent(machine)}` : ""}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`),
   /**
    * Search's answer to the question, worked out by the installation's model
    * from the hits; takes a few seconds. Asked for - the AI assist button, or

@@ -162,9 +162,17 @@ export function histogramPanel(data, { unit = "match", series = null, selected =
   bars.addEventListener("mouseleave", () => (readout.textContent = selected ? `Showing ${bucketSpan(selected.from, data.bucketMs)}` : ""));
   panel.append(bars);
 
+  // The axis: where the bars start, the middle, and where they end. Each
+  // mark once - a range narrow enough to be a single bucket (an
+  // installation whose first session was ten minutes ago) drew the same
+  // minute three times under one full-width block, which reads as a chart
+  // that failed to draw rather than as a range that is one bucket wide.
+  // There the two marks that mean anything are the bucket's own ends.
   const axis = el("div", "search-histogram-axis");
   const last = data.buckets.length - 1;
-  for (const index of [0, Math.floor(last / 2), last]) axis.append(el("span", null, bucketLabel(data.buckets[index].at, data.bucketMs)));
+  const marks = [...new Set([0, Math.floor(last / 2), last])].map((index) => bucketLabel(data.buckets[index].at, data.bucketMs));
+  if (marks.length < 2) marks.push(bucketLabel(data.buckets[last].at + data.bucketMs, data.bucketMs));
+  for (const mark of marks) axis.append(el("span", null, mark));
   panel.append(axis);
 
   if (selected) {
@@ -200,6 +208,23 @@ function nameOf(hit) {
   if (hit.title) return hit.title;
   const who = hit.session?.actor?.name || hit.session?.actor?.id;
   return who ? `A session of ${who}` : "A session";
+}
+
+/**
+ * The machine a search is narrowed to, as a chip beside the question with
+ * the way out of it on it.
+ *
+ * A search narrowed by a link has to say so on the page: the list is one
+ * machine's sessions and nothing on screen said which, so a reader who
+ * arrived from a machine's page had a Search that had quietly lost most
+ * of the installation. Its name when the answer carries one, its id when
+ * it does not - a machine forgotten still has sessions, and they are
+ * still findable by the id the link holds.
+ */
+function machineChip(machine, onMachine) {
+  const chip = button("chip chip-ok search-facet-chip", `${machine.name || machine.id} ×`, () => onMachine());
+  chip.setAttribute("aria-label", `Search every machine again, not only ${machine.name || machine.id}`);
+  return chip;
 }
 
 /** What a provider is called, by the id the filter holds. */
@@ -424,9 +449,11 @@ function sessionsResults({ ask, kind, provider, data, onKind, onProvider, onBuck
             ? "Nothing matched in that slice of the range; the bars say where the matches are."
             : provider
               ? `Nothing here was done on ${providerLabel(data, provider)}. Every provider shows the rest.`
-              : !ask.q
-                ? "Nothing has been recorded here yet. A session appears as soon as an executor reports one."
-                : `Nothing matched "${ask.q}"${data.semantic ? "" : " by its words"}. ${data.semantic ? "Try other words, or fewer." : data.semantic === false && data.semantic_why ? data.semantic_why : "Try other words, or fewer."}`,
+              : ask.machine
+                ? "Nothing that machine ran is here. The index holds a month, so its work may simply have aged out of it."
+                : !ask.q
+                  ? "Nothing has been recorded here yet. A session appears as soon as an executor reports one."
+                  : `Nothing matched "${ask.q}"${data.semantic ? "" : " by its words"}. ${data.semantic ? "Try other words, or fewer." : data.semantic === false && data.semantic_why ? data.semantic_why : "Try other words, or fewer."}`,
       ),
     );
   } else {
@@ -693,7 +720,7 @@ function usagePanel(stats, { onBucket, onOpen, pathFor, onSearch }) {
  * is the exchange with the model, which happens only when somebody asks
  * for it; `stats` is the range's usage, shown under the listing.
  */
-export function searchView({ ask, kind = "all", provider = null, range = "all", data = null, failed = null, chat = null, stats = null, onSearch, onMode, onKind, onProvider, onRange, onReread = () => {}, onBucket, onExplain, onAsk, onOpen, pathFor }) {
+export function searchView({ ask, kind = "all", provider = null, range = "all", data = null, failed = null, chat = null, stats = null, onSearch, onMode, onKind, onProvider, onMachine = () => {}, onRange, onReread = () => {}, onBucket, onExplain, onAsk, onOpen, pathFor }) {
   const pane = el("div", "detail detail-wide");
   pane.append(
     detailHead(
@@ -745,6 +772,17 @@ export function searchView({ ask, kind = "all", provider = null, range = "all", 
     onSearch(input.value.trim(), ask.mode);
   });
   pane.append(form);
+
+  // And, when a link narrowed this search to one machine, the chip that
+  // says which - under the box, because it narrows the answer as much as
+  // the words in it do, and pressing it gives the rest back. The name
+  // comes with the answer; until that lands, the id in the address is
+  // what there is to say.
+  if (ask.machine) {
+    const row = chips(machineChip(data?.machine ?? { id: ask.machine, name: null }, onMachine));
+    row.classList.add("search-facet-row");
+    pane.append(row);
+  }
 
   // Which thing is searched, and how far back. The mode is in the
   // address (a trail search is a different link); the range is the page's.

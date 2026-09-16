@@ -96,6 +96,22 @@ function providersOf(doc) {
   return ids.length ? ids : [NO_PROVIDER];
 }
 
+/**
+ * The machine a search is narrowed to, as the machine's own page links to
+ * it (`/search?machine=<id>`, console-connect.js `setupDetail`), with the
+ * name to put on the chip - read off the sessions themselves, since the
+ * id is all the link carries and a machine may be forgotten while its
+ * sessions stand.
+ */
+function machineOf(hits, id) {
+  if (!id) return null;
+  for (const hit of hits) {
+    const machine = hit.doc.session?.machine;
+    if (machine?.id === id && machine.name) return { id, name: machine.name };
+  }
+  return { id, name: null };
+}
+
 /** Every provider the hits were done on, most work first, as the filter offers them. */
 function providerFacets(hits) {
   const counts = new Map();
@@ -120,8 +136,9 @@ export function mount(app, scope) {
    * workspace (or the asker's own, off every listing) is a hit, and its title and the quoted
    * text go only to somebody who may read the session's words - the rest
    * see who was working and what was reached for. The catalogue is
-   * everybody's. `kind` narrows to one of the four and `provider` to the
-   * sessions done on one vendor's models; `range` is the sessions' age, as
+   * everybody's. `kind` narrows to one of the four, `provider` to the
+   * sessions done on one vendor's models and `machine` to the sessions one
+   * machine ran; `range` is the sessions' age, as
    * on the Tools page, and `from`/`to` one bar of the histogram that comes
    * back with the hits - which counts every match in the range, not only
    * the ones the page lists.
@@ -137,6 +154,13 @@ export function mount(app, scope) {
     // no filter at all rather than a filter that matches nothing.
     const askedProvider = String(req.query.provider ?? "").trim();
     const provider = askedProvider === NO_PROVIDER || models.PROVIDERS[askedProvider] ? askedProvider : null;
+    // One machine, when a link named one: the sessions that ran there and
+    // nothing else, question or no question. This is where a machine's
+    // page sends somebody who wants to see its work, so it narrows before
+    // the search rather than after it - the best fifty of everything, then
+    // the ones that happened to be this machine's, is a page that says a
+    // machine did nothing because somebody else was busier.
+    const machineId = String(req.query.machine ?? "").trim().slice(0, 200) || null;
     const { now, range, since, from, to, within } = searchRange(req);
     // A question is answered with its best few; nothing asked is a listing,
     // and a listing that stops at twenty reads as a search that went wrong.
@@ -150,7 +174,14 @@ export function mount(app, scope) {
       limit: 500,
       kinds,
       since,
-      allow: (doc) => doc.kind !== "session" || scope.sessionInScope(req, doc.session) || own(doc.session),
+      allow: (doc) => {
+        // A connector, a tool or a skill did not run anywhere, so a search
+        // narrowed to a machine is of sessions alone - the same way a
+        // provider narrows to sessions alone.
+        if (doc.kind !== "session") return !machineId;
+        if (machineId && doc.session?.machine?.id !== machineId) return false;
+        return scope.sessionInScope(req, doc.session) || own(doc.session);
+      },
     });
     // Whose models the work was done on, over everything that matched -
     // counted before the filter is applied, so that the filter can be
@@ -173,6 +204,10 @@ export function mount(app, scope) {
       range,
       from,
       to,
+      // The machine, with its name: the page draws a chip saying what it
+      // is narrowed to, and a chip that said only `laptop:Yoavs-MBP-2`
+      // would be the id of something the reader has a name for.
+      machine: machineOf(found, machineId),
       provider,
       providers,
       total: matched.length,

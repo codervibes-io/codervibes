@@ -324,11 +324,43 @@ const vectors = new Vectors();
 /** Query vectors, by query: a person refining a search asks the proxy once per wording. */
 const queryVectors = new Map();
 
+/**
+ * The harness's own name for a tool this app renames, by the name this app
+ * uses - the inverse of telemetry-ingest.js `TOOL_NAMES`.
+ *
+ * A call is recorded under this app's name for it (`Bash` is
+ * `run_command` everywhere, so that a Claude Code session and a Codex one
+ * are counted on one row), and that was the only name the index held. But
+ * the name a person types into Search is the one their agent showed them:
+ * searching for `Bash` found nothing at all, on an installation whose
+ * every session had run one. Both names are words of a document now; only
+ * this app's is on the row, since two chips for one call reads as two
+ * calls. test/search.test.js checks this is still the inverse of that
+ * table - a tool renamed there and not here goes quietly unfindable
+ * again.
+ */
+export const HARNESS_NAMES = {
+  read_file: ["Read"],
+  edit_file: ["Edit", "MultiEdit", "NotebookEdit"],
+  write_file: ["Write"],
+  run_command: ["Bash"],
+  search: ["Glob", "Grep"],
+  list_dir: ["LS"],
+  web_fetch: ["WebFetch"],
+  web_search: ["WebSearch"],
+  subagent: ["Task", "Agent"],
+  todo: ["TodoWrite"],
+};
+
 function tokensOf(doc) {
   // The models a session called are words too: "opus" and "gemini" are how
   // a person asks for the work done on one, and neither name is anywhere
-  // in a transcript - the harness reports the id, and nobody types it.
-  return tokenize([doc.title, doc.text, ...(doc.tools ?? []), ...(doc.connectors ?? []), ...(doc.skills ?? []), ...(doc.models ?? []), ...(doc.providers ?? [])].filter(Boolean).join("\n"));
+  // in a transcript - the harness reports the id, and nobody types it. So
+  // are the harness's own names for the tools, for the same reason: what
+  // was on screen is what gets typed into a search box.
+  const tools = doc.tools ?? [];
+  const asTyped = tools.flatMap((tool) => HARNESS_NAMES[tool] ?? []);
+  return tokenize([doc.title, doc.text, ...tools, ...asTyped, ...(doc.connectors ?? []), ...(doc.skills ?? []), ...(doc.models ?? []), ...(doc.providers ?? [])].filter(Boolean).join("\n"));
 }
 
 /** What the embedder reads of a document: the head of it, where the ask and the names are. */
@@ -579,6 +611,11 @@ export function sessionDocument(session, events = [], sessionSpans = []) {
       // The repository's name too: which workspace a session is in is
       // read off either (index.js `roomsOf`).
       repo: session.repo ?? null,
+      // Where it ran, so that a search can be narrowed to one machine
+      // (pages/search.js `machine`): a machine's page has nothing to send
+      // somebody to otherwise, and "1 session" that cannot be opened is
+      // the end of the road rather than the way to the work.
+      machine: session.machine ?? null,
       actor: session.actor ?? null,
       state: session.state ?? null,
       startedAt: session.startedAt ?? null,

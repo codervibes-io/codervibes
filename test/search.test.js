@@ -247,7 +247,46 @@ test("a session's document is what was asked, what was reached for and what was 
   assert.deepEqual(doc.tools, ["fly_app", "bash", "fly_deploy"]);
   assert.deepEqual(doc.connectors, ["fly"]);
   assert.deepEqual(doc.skills, ["codervibes-deploy"]);
-  assert.deepEqual(doc.session, { id: "s-9", owner: "ada", repoId: "r1", repo: null, actor: session.actor, state: "ended", startedAt: 5, endedAt: 9, pulls: null });
+  assert.deepEqual(doc.session, { id: "s-9", owner: "ada", repoId: "r1", repo: null, machine: null, actor: session.actor, state: "ended", startedAt: 5, endedAt: 9, pulls: null });
+});
+
+test("a session's document says which machine ran it, so a search can be narrowed to one", () => {
+  // The machine's own page has "1 session" on it and nothing to press:
+  // the way to that session is a search narrowed to this machine
+  // (pages/search.js), and that is only possible if the document says
+  // where the work happened.
+  const machine = { id: "laptop:Adas-MBP", name: "Adas-MBP", host: "laptop" };
+  const doc = search.sessionDocument({ id: "s-m", startedAt: 1, machine }, [], []);
+  assert.deepEqual(doc.session.machine, machine);
+});
+
+test("a tool is a word under the harness's name for it as well as this app's: Bash finds the session that ran one", async () => {
+  // A call is recorded under this app's name for it, so the index had
+  // `run_command` and a person searching for the `Bash` their agent
+  // showed them found nothing at all.
+  const doc = search.sessionDocument(
+    { id: "s-bash", title: "Green again", startedAt: NOW, state: "ended" },
+    [{ kind: "platform.prompt", text: "the suite is red" }],
+    [{ attrs: { "cv.tool.name": "run_command" } }, { attrs: { "cv.tool.name": "read_file" } }],
+  );
+  await search.index(doc);
+  for (const typed of ["Bash", "run_command", "Read", "read_file"]) {
+    assert.equal((await search.query(typed)).hits[0]?.doc.id, "session:s-bash", `searching for ${typed}`);
+  }
+  // One name on the row, though: the call happened once, and two chips
+  // for it would read as two calls.
+  assert.deepEqual(doc.tools, ["run_command", "read_file"]);
+
+  // And the table is the inverse of the one that renames them
+  // (telemetry-ingest.js `TOOL_NAMES`): a harness tool renamed there and
+  // not here goes quietly unfindable again, which is the bug this is.
+  const ingest = await fs.readFile(new URL("../server/telemetry-ingest.js", import.meta.url), "utf8");
+  const table = ingest.slice(ingest.indexOf("const TOOL_NAMES = {"), ingest.indexOf("const MCP_PREFIX"));
+  const renamed = [...table.matchAll(/^\s+(\w+): "(\w+)",$/gm)].map(([, from, to]) => [from, to]);
+  assert.ok(renamed.length >= 13, `the table was read: ${renamed.length} entries`);
+  for (const [from, to] of renamed) {
+    assert.ok(search.HARNESS_NAMES[to]?.includes(from), `${from} is how a person types ${to}`);
+  }
 });
 
 test("a session's document says which models it called and whose they are, and both are words the index has", async () => {

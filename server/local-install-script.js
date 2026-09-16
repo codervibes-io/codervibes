@@ -130,7 +130,32 @@ YES=0
 # suite answers the questions and is for nothing else.
 TTY="\${CODERVIBES_INSTALL_TTY:-/dev/tty}"
 
+# The OpenTelemetry variables belong to the coding agents on this machine,
+# which step 5 points at this server. This shell has them because the env
+# file step 5 wrote is sourced by every shell afterwards, and handing them to
+# the server would tell it to export its own spans to its own door.
+# server/local.js drops them itself, which is the fix; this is the belt to
+# its braces, and it is what stands between a checkout from before that fix
+# and a server that starts and dies.
+NOEXPORT="env -u OTEL_EXPORTER_OTLP_ENDPOINT -u OTEL_EXPORTER_OTLP_HEADERS -u OTEL_EXPORTER_OTLP_PROTOCOL -u CLAUDE_CODE_ENABLE_TELEMETRY"
+
 usage() { echo "usage: local.sh [--dir <path>] [--port <n>] [--yes] [--no-setup] [--no-start]" >&2; }
+
+# Whether a pid is a process that is still running. \`kill -0\` is not enough
+# on its own: a container with no init reaps nothing, so the server this
+# script started stays a <defunct> entry that answers \`kill -0\` forever -
+# and every re-run then sat through the whole ten-second stop loop and
+# announced a dead server as running. Linux says so in /proc; where there is
+# no /proc (macOS, a BSD) the pid is taken at its word, which is what this
+# did everywhere before. CODERVIBES_INSTALL_PROC is how the test suite hands
+# it a /proc of its own and is for nothing else.
+alive() {
+  [ -n "\${1:-}" ] || return 1
+  kill -0 "$1" 2>/dev/null || return 1
+  proc="\${CODERVIBES_INSTALL_PROC:-/proc}"
+  if [ -r "$proc/$1/status" ] && grep -q '^State:[	 ]*Z' "$proc/$1/status" 2>/dev/null; then return 1; fi
+  return 0
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -243,7 +268,7 @@ else
   running=""
   if [ -f "$PIDFILE" ]; then
     old=$(cat "$PIDFILE" 2>/dev/null || true)
-    if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+    if alive "$old"; then
       running="$old"
     else
       rm -f "$PIDFILE"
@@ -255,7 +280,7 @@ else
     ask "Restart it on the code above?"
     kill "$running" 2>/dev/null || true
     n=0
-    while kill -0 "$running" 2>/dev/null && [ $n -lt 10 ]; do n=$((n + 1)); sleep 1; done
+    while alive "$running" && [ $n -lt 10 ]; do n=$((n + 1)); sleep 1; done
     rm -f "$PIDFILE"
     note "Stopped it."
   elif curl -s -o /dev/null -m 2 "$URL/" 2>/dev/null; then
@@ -271,7 +296,7 @@ else
   else
     ask "Start CoderVibes on $URL?"
   fi
-  PORT="$PORT" nohup node "$DIR/server/local.js" > "$LOG" 2>&1 </dev/null &
+  PORT="$PORT" nohup $NOEXPORT node "$DIR/server/local.js" > "$LOG" 2>&1 </dev/null &
   echo $! > "$PIDFILE"
   n=0; up=0
   while [ $n -lt 15 ]; do

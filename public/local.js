@@ -185,12 +185,10 @@ const executors = executorsPage(pageCtx, {
   // not draw are two kinds of row that never appear. What is left is
   // machines, which is what it draws itself.
   //
-  // And no page that lists a machine's sessions to send somebody to. Search
-  // is the only listing this edition has and it searches words, not
-  // machines - so rather than a button onto a search that cannot be
-  // narrowed to this machine, there is no button. A facet for it is the
-  // honest fix, and it is not this piece of work.
-  sessionsPage: false,
+  // Its sessions, though, it does have a page for: Search is the listing
+  // this edition has, and it takes a machine (`/search?machine=<id>`,
+  // page-search.js), so the button on a machine's page opens that
+  // machine's work rather than nothing at all.
   onForget: (executor) => api.forgetExecutor(executor.id).then(() => {
     // Back to the list, and read it again: the row is gone and the count
     // under the title has changed, and nothing publishes an event for it.

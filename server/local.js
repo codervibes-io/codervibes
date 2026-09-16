@@ -55,6 +55,31 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// --------------------------------------------- what this edition unsets
+
+// The OpenTelemetry variables in this shell are for the coding agents on
+// this machine, and never for this process. The setup line writes
+// `OTEL_EXPORTER_OTLP_ENDPOINT=<origin>/otlp` into ~/.codervibes/env and
+// makes .profile, .bashrc and .zshrc source it (setup-script.js), so every
+// shell a person opens afterwards carries it - including the one they start
+// this server from. Read here it would mean this installation exporting its
+// own spans to its own ingest door: a loop, and one that records itself.
+//
+// It was worse than pointless. telemetry.js reads the variable as it loads
+// and, when it is set, lazy-imports @opentelemetry/exporter-trace-otlp-http,
+// which the open-source cut does not ship (scripts/lib/closure.mjs declares
+// the packages asked for at the left margin; that one is indented behind
+// this very check). So the *second* run of the installer - the first one
+// from a shell that had sourced the env file it had just written - stopped
+// the server and started one that died on ERR_MODULE_NOT_FOUND.
+//
+// Deleted rather than warned about, and nothing is printed: the person did
+// not set this for us, their agents did not stop reading it, and a line of
+// output about a variable they never typed explains nothing.
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith("OTEL_") || name === "CLAUDE_CODE_ENABLE_TELEMETRY") delete process.env[name];
+}
+
 // ------------------------------------------------- what this edition sets
 
 /** Set unless the person running it said otherwise. */
