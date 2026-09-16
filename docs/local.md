@@ -9,8 +9,9 @@ It is the same program as the hosted product, cut down rather than forked.
 Everything the local edition can do, codervibes.io does too; what it
 leaves out is everything that only makes sense with other people in it -
 workspaces, tasks handed between agents, the connected services
-an agent is lent, sandbox agents. Five pages remain: **Executors**,
-**Performance**, **Search**, **Tools** and **Connectors**. What it is for
+an agent is lent, sandbox agents. Six pages remain: **Executors**,
+**Performance**, **Search**, **Activity**, **Tools** and **Connectors**.
+What it is for
 is the thing those answer, which is the thing you cannot see from inside a
 terminal: what your coding agents actually did, what it cost, how you
 worked with them, and what became of the work.

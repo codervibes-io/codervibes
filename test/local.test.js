@@ -303,6 +303,22 @@ test("a session reported with no credential reaches every page", async () => {
     log.body.events.some((entry) => String(entry.text ?? "").includes("Make the deploy script idempotent")),
     "the session opened without the prompt that started it",
   );
+
+  // Activity: the same page the hosted product has, answered from the same
+  // route (pages/activity.js). The session ended, so it is under Finished
+  // recently and not under Working now; and nothing waits on a person,
+  // whatever the cloud would have put there - this edition has no tasks,
+  // no approvals and no merge to offer, so the seam answers with none
+  // (scope.js `waitingRows`) and the page draws no Needs action section.
+  const activity = await call("/api/home");
+  assert.equal(activity.status, 200, JSON.stringify(activity.body));
+  assert.deepEqual(activity.body.working, []);
+  assert.deepEqual(activity.body.waiting, []);
+  assert.equal(activity.body.finished.length, 1);
+  assert.equal(activity.body.finished[0].id, sessionId);
+  assert.equal(activity.body.finished[0].where, "external", "the where-filter default would hide this edition's only kind of work");
+  assert.equal(activity.body.finished[0].machine?.name, "Adas-MBP");
+  assert.equal(activity.body.finished[0].files, undefined, "a finished row is a line in a table, not the session's page");
 });
 
 test("three machines are seated, the fourth is told why not, and forgetting one makes room", async () => {
@@ -311,6 +327,13 @@ test("three machines are seated, the fourth is told why not, and forgetting one 
   const onBoxTwo = await start("box-2", "local-2");
   assert.equal(onBoxTwo.status, 200);
   assert.equal((await start("box-3", "local-3")).status, 200);
+
+  // Two sessions that started and have not ended are what Activity calls
+  // Working now - each with where it runs, since "who is working, and on
+  // what machine" is the page's first question.
+  const activity = await call("/api/home");
+  assert.deepEqual(activity.body.working.map((row) => row.machine?.name).sort(), ["box-2", "box-3"]);
+  assert.ok(activity.body.working.every((row) => row.state === "live" && row.now), "a live row carries what it is doing this second");
 
   const refused = await start("box-4", "local-4");
   assert.equal(refused.status, 409, "the fourth machine was seated over the cap");
@@ -390,17 +413,15 @@ test("a machine's page has somewhere to send you: a search takes one machine and
 });
 
 test("the addresses this edition serves are its own, and the ones it does not are gone", async () => {
-  for (const url of ["/", "/executors", "/executors/setup%3Alaptop%3AAdas-MBP", "/performance", "/performance/harnesses", "/search", "/tools", "/tools/run_command", "/connectors"]) {
+  for (const url of ["/", "/executors", "/executors/setup%3Alaptop%3AAdas-MBP", "/performance", "/performance/harnesses", "/search", "/activity", `/activity/${sessionId}`, "/tools", "/tools/run_command", "/connectors"]) {
     const page = await call(url);
     assert.equal(page.status, 200, url);
     assert.match(page.body, /local\.js/, `${url} is the console`);
   }
-  // One session has an address and no link in the column.
-  assert.match((await call(`/activity/${sessionId}`)).body, /local\.js/);
 
   // And the pages that belong to the hosted product are not here at all -
   // not a stub, not a redirect to something that half works.
-  for (const url of ["/secrets", "/workspace", "/account", "/workflows", "/activity", "/sign-in", "/how-it-works", "/blog"]) {
+  for (const url of ["/secrets", "/workspace", "/account", "/workflows", "/sign-in", "/how-it-works", "/blog"]) {
     assert.equal((await call(url)).status, 404, `${url} should not be served by the local edition`);
   }
 
@@ -410,7 +431,7 @@ test("the addresses this edition serves are its own, and the ones it does not ar
   }
 });
 
-test("an address this edition has not got is answered in its own voice, with the five pages on it", async () => {
+test("an address this edition has not got is answered in its own voice, with the six pages on it", async () => {
   // Express's own answer is `Cannot GET /sessions/abc` in Times New Roman:
   // the one thing this edition ever shows that does not look like the app,
   // and it names none of the pages - so somebody who guessed an address
@@ -420,7 +441,7 @@ test("an address this edition has not got is answered in its own voice, with the
   assert.equal(missed.status, 404);
   assert.doesNotMatch(missed.body, /Cannot GET/);
   assert.match(missed.body, /console\.css/, "the page is not drawn in the console's own style");
-  for (const page of ["/executors", "/performance", "/search", "/tools", "/connectors"]) {
+  for (const page of ["/executors", "/performance", "/search", "/activity", "/tools", "/connectors"]) {
     assert.match(missed.body, new RegExp(`href="${page}"`), `the 404 does not offer ${page}`);
   }
   assert.match(missed.body, new RegExp(`/sessions/${sessionId}`), "it does not say which address it is about");
@@ -601,7 +622,7 @@ test("it refuses to start on an address other machines can reach", async () => {
 // ------------------------------------------------------- reading the source
 //
 // What the two files say about themselves, which no request can show: that
-// the column is four pages in one order, that the client's addresses are the
+// the column is six pages in one order, that the client's addresses are the
 // server's, and that neither names a page this edition does not have.
 
 const html = await read("public", "local.html");
@@ -612,20 +633,21 @@ const css = await read("public", "console.css");
 const edition = await read("public", "console-edition.js");
 const toolsSource = await read("public", "console-tools.js");
 
-const COLUMN = ["executors", "performance", "search", "tools", "connectors"];
+const COLUMN = ["executors", "performance", "search", "activity", "tools", "connectors"];
 
-test("the column is five pages, in the order the edition puts them in", () => {
+test("the column is six pages, in the order the edition puts them in", () => {
   const order = [...html.matchAll(/data-page="([a-z]+)"/g)].map((match) => match[1]);
   assert.deepEqual(order, COLUMN, "the column is a different set or a different order");
-  // One session is an address with no link, so it is in the page set and
-  // not in the column.
-  assert.match(entry, /activity: \{ path: "\/activity"/);
-  assert.doesNotMatch(html, /data-page="activity"/);
+  // Activity is a page with a link, and one session is the address under
+  // it - the same address the hosted console gives a session, so a link
+  // copied out of one opens in the other.
+  assert.match(entry, /activity: \{ path: "\/activity", kind: "session", title: "Activity" \}/);
+  assert.match(entry, /pane\.append\(back\(pathFor\("activity"\)\)\);/, "back from a session goes to Activity");
 });
 
 test("every page the client knows is a page the server serves, and the reverse", () => {
   const known = [...entry.matchAll(/^  ([a-z]+): \{ path: "(\/[a-z]+)"/gm)].map((match) => match[2]);
-  assert.deepEqual(known, ["/executors", "/performance", "/search", "/tools", "/connectors", "/activity"]);
+  assert.deepEqual(known, ["/executors", "/performance", "/search", "/activity", "/tools", "/connectors"]);
   // The server's own list, as it hands them to `consolePage`. Each page's
   // bare address and whatever it takes under it.
   const routes = [...serverEntry.matchAll(/^  "(\/[^"]*)",$/gm)].map((match) => match[1]);
@@ -636,13 +658,13 @@ test("every page the client knows is a page the server serves, and the reverse",
     "/performance",
     "/performance/:by",
     "/search",
+    "/activity",
+    "/activity/:sessionId",
     "/tools",
     "/tools/:toolName",
     "/connectors",
-    "/activity/:sessionId",
   ]);
   for (const page of known) {
-    if (page === "/activity") continue; // one session only; the bare address is Search
     assert.ok(routes.includes(page), `the client can navigate to ${page}, which the server does not serve`);
   }
 });

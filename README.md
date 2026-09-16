@@ -5,7 +5,7 @@ Watch what your coding agents actually do.
 Claude Code, Codex, Gemini CLI and OpenCode each run in a terminal and
 leave nothing behind but scrollback. This reads what they did - every
 session, every prompt, every tool call and what came of it, what each one
-cost and how long you spent waiting on it - and puts it on five pages you
+cost and how long you spent waiting on it - and puts it on six pages you
 can open in a browser.
 
 It runs on your laptop, answers on your laptop, and stores its records in
@@ -73,7 +73,7 @@ the answer.
 No token on it, and none needed: `/mcp` answers this machine only, the same
 way the console does.
 
-## The five pages
+## The six pages
 
 **Executors** - the machines reporting here, what runs on each, and when
 each last did anything. A machine's page shows its sessions and lets you
@@ -91,6 +91,13 @@ the matching lines quoted, and open it whole - the prompt, each tool call,
 what the agent answered. Keyword search runs in the process and needs
 nothing configured; with a model key set, it also explains what it found
 and matches on meaning rather than words.
+
+**Activity** - what is being worked on this minute, one card per live
+session with how long it has run, what it has cost in tokens and which
+repo it is in, and under that the sessions that finished in the last
+month, each with what came of it. The same page the hosted product has,
+without its Needs action cards: nothing here hands out a task or holds a
+call for approval, so there is nothing on it to act on, only to read.
 
 **Tools** - which tools your agents actually reach for, how often each
 one fails, and which skills got used.

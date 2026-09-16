@@ -2,7 +2,7 @@
 //
 // What this is: the same program as the hosted product, mounting the same
 // page modules over the same records - Executors, Performance, Search,
-// Tools, one session - and the same ingest door a harness on this machine
+// Activity, Tools, one session - and the same ingest door a harness on this machine
 // posts to. server/pages/*.js and server/scope.js are what make that
 // possible; this file is the other half of the seam, the installation
 // answering for its own shape.
@@ -126,6 +126,7 @@ const { mount: mountPerformance } = await import("./pages/performance.js");
 const { mount: mountSearch, refreshSearchCatalog } = await import("./pages/search.js");
 const { mount: mountTools } = await import("./pages/tools.js");
 const { mount: mountSessions } = await import("./pages/sessions.js");
+const { mount: mountActivity } = await import("./pages/activity.js");
 const { mount: mountIngest } = await import("./pages/ingest.js");
 const gitHosts = await import("./git-hosts/index.js");
 const gitHostCredentials = await import("./git-hosts/credentials.js");
@@ -220,7 +221,7 @@ const scope = scopeFor({
    * should be the team's repos' work. Here there is no team and no repo
    * registry: a session in a checkout nobody registered is `external` and a
    * session in a scratch directory is `none`, and both of those are simply
-   * the person's work. Hiding them would leave the four pages empty on a
+   * the person's work. Hiding them would leave the pages empty on a
    * laptop that had been reporting all week, which is exactly the bug this
    * edition exists to not have.
    */
@@ -308,6 +309,9 @@ mountPerformance(app, scope);
 mountSearch(app, scope);
 mountTools(app, scope);
 mountSessions(app, scope);
+// Activity, with the seam's own answer for what is waiting on a person -
+// nothing - so the page is the live sessions and the finished ones.
+mountActivity(app, scope);
 
 /**
  * Forget a machine: the one way a place comes free under the cap.
@@ -446,11 +450,10 @@ app.get("/api/agents/stream", requireUser, wrap(async (req, res) => {
 
 // --------------------------------------------------------------- the console
 //
-// One document, four pages, and the addresses under them - the same
+// One document, six pages, and the addresses under them - the same
 // arrangement as index.js and for the same reason: a deep link, a reload and
 // the back button all have to work, which is the whole difference between a
-// page and a tab. `/activity/<session>` has no link in the column; it is
-// what a search result opens onto.
+// page and a tab.
 const consolePage = (req, res) => res.sendFile("local.html", { root: PUBLIC_DIR });
 
 for (const route of [
@@ -460,10 +463,11 @@ for (const route of [
   "/performance",
   "/performance/:by",
   "/search",
+  "/activity",
+  "/activity/:sessionId",
   "/tools",
   "/tools/:toolName",
   "/connectors",
-  "/activity/:sessionId",
 ]) {
   app.get(route, consolePage);
 }
@@ -481,7 +485,7 @@ app.use(express.static(PUBLIC_DIR, { index: false }));
  * Anywhere else, a person mistyped or followed a stale link, and what
  * Express says to them is `Cannot GET /sessions/abc` in Times New Roman on
  * white. It is not wrong, it is just the only thing this edition ever shows
- * that does not look like the app - and it names none of the five pages, so
+ * that does not look like the app - and it names none of the six pages, so
  * somebody who guessed an address wrong has nothing to do next but guess
  * again. This is the same document the console is, cut down: the two
  * stylesheets, the titlebar, and the pages as links.
@@ -494,6 +498,7 @@ const PAGES = [
   ["/executors", "Executors", "every machine reporting here"],
   ["/performance", "Performance", "what the sessions cost and came to"],
   ["/search", "Search", "every session this installation has seen"],
+  ["/activity", "Activity", "what is being worked on now, and what finished lately"],
   ["/tools", "Tools", "what the agents reached for"],
   ["/connectors", "Connectors", "the git host your pull requests live on"],
 ];
@@ -521,7 +526,7 @@ const notFoundPage = (asked) => `<!doctype html>
     </header>
     <main class="detail" style="max-width: 640px; padding: 24px 16px;">
       <header class="detail-head"><h1 class="detail-title">Not here</h1></header>
-      <p class="console-hint">There is no <span class="row-id">${escape(asked)}</span> in this CoderVibes. It has five pages:</p>
+      <p class="console-hint">There is no <span class="row-id">${escape(asked)}</span> in this CoderVibes. It has six pages:</p>
       <section class="console-panel">
         ${PAGES.map(([href, title, note]) => `<div class="row"><a class="row-name" href="${href}">${title}</a><span class="row-note">${note}</span></div>`).join("\n        ")}
       </section>

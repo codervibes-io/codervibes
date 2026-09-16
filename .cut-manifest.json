@@ -1,6 +1,6 @@
 {
-  "cutFrom": "7308c2bfc60575da6d3ff3993804df8da731bceb",
-  "cutAt": "2026-09-16T02:08:28.223Z",
+  "cutFrom": "3594c4796394ddf385f4ae876c6ceac367feff09",
+  "cutAt": "2026-09-16T07:20:00.070Z",
   "files": [
     ".gitignore",
     "LICENSE",
@@ -22,6 +22,7 @@
     "public/console-friction.js",
     "public/console-harness.js",
     "public/console-harnesses.js",
+    "public/console-home.js",
     "public/console-list.js",
     "public/console-performance.js",
     "public/console-search.js",
@@ -35,6 +36,7 @@
     "public/local.html",
     "public/local.js",
     "public/modal.js",
+    "public/page-activity.js",
     "public/page-executors.js",
     "public/page-git-hosts.js",
     "public/page-performance.js",
@@ -86,6 +88,7 @@
     "server/model-dialects.js",
     "server/models.js",
     "server/otlp.js",
+    "server/pages/activity.js",
     "server/pages/executors.js",
     "server/pages/ingest.js",
     "server/pages/performance.js",

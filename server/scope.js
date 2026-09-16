@@ -140,6 +140,22 @@ export function scopeFor(deps = {}) {
     /** Tell the room an agent has lost its seat. */
     agentGone: async () => {},
 
+    /**
+     * What is waiting on a person, for the Activity page (pages/activity.js):
+     * tasks parked on a review or a question, access requests, calls held
+     * for approval, open pull requests - each as a row with `waitingOn.since`
+     * on it. Nothing, by default: waiting is what tasks and approvals do,
+     * and an installation that hands out neither has nothing to answer
+     * with. The cloud's rows are index.js `waitingRows`.
+     *
+     * @param {object} req
+     * @param {{sessions: object[], records: object[]}} read the month's
+     *   sessions in scope and its pull request records, already read for
+     *   the page - so the rows can be whose-agent'd and de-duplicated
+     *   against them without reading twice.
+     */
+    waitingRows: async () => [],
+
     // ---- where the caller is standing ----------------------------------
 
     /** The workspace the caller has open, as an id - what every listing is scoped to. */

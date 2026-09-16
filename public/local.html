@@ -41,7 +41,7 @@
          pitch and the blog, and this edition has none of the three. The
          console is what the page is, from the first paint. -->
     <main class="console" id="console">
-      <!-- Five pages, and no workspace above them: there is nobody to be in
+      <!-- Six pages, and no workspace above them: there is nobody to be in
            a room with, so there is nothing to switch between. -->
       <aside class="app-sidebar" id="app-sidebar">
         <nav class="sidebar-nav" aria-label="Pages">
@@ -63,6 +63,14 @@
             <span class="sidebar-icon" aria-hidden="true">⌕</span>
             <span>Search</span>
           </a>
+          <!-- What is being worked on this minute, and what finished
+               lately - the same page the hosted product has, without its
+               Needs action cards: nothing here hands out a task or holds a
+               call for approval, so there is nothing to act on from it. -->
+          <a class="sidebar-link" href="/activity" data-page="activity">
+            <span class="sidebar-icon" aria-hidden="true">◉</span>
+            <span>Activity</span>
+          </a>
           <!-- What the agents reach for, and how often each one fails. -->
           <a class="sidebar-link" href="/tools" data-page="tools">
             <span class="sidebar-icon" aria-hidden="true">⚒</span>
@@ -75,9 +83,6 @@
             <span class="sidebar-icon" aria-hidden="true">⇄</span>
             <span>Connectors</span>
           </a>
-          <!-- One session (`/activity/<id>`) has no link here: it is what a
-               search result and a machine's list of work open onto, not a
-               page somebody navigates to. -->
         </nav>
       </aside>
 

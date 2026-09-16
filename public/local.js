@@ -1,12 +1,18 @@
-// The local console: five pages, one document, and nobody to sign in as.
+// The local console: six pages, one document, and nobody to sign in as.
 //
 // This is console.js's job - which pages there are, what a page draws, what
-// a refresh reads - over a quarter of its page set. Everything it does not
+// a refresh reads - over a third of its page set. Everything it does not
 // do is the point: no `initAuth` and no gate, because the server answers
 // `auth: { mode: "none" }` and the page simply opens; no secrets read,
 // because this edition has none; no workspace switcher, because there is one
-// person; no Activity page, because a list of everybody's work is a list of
-// one person's own sessions, which Search is already over.
+// person.
+//
+// Activity is the hosted product's page with one thing left off: the Needs
+// action cards, which are tasks, approvals and merges, none of which this
+// edition has. page-activity.js takes the card as an argument and is handed
+// none here, so the page is what is being worked on this minute and what
+// finished lately - which, on a laptop, is the question a person opens the
+// console with.
 //
 // Connectors is this console's own rather than the full one's: the page here
 // is three git hosts and a token box (page-git-hosts.js), where the hosted
@@ -16,15 +22,12 @@
 //
 // The mechanics are shell.js and the page modules, unchanged and unforked -
 // the address handling, the collapse of a burst of events into one read, the
-// reconnecting stream, the four pages and the session page are the same code
+// reconnecting stream, the five pages and the session page are the same code
 // the full console hangs in its own shell. That is the whole reason this
 // file is short, and it is why it must stay a composition: a helper reached
 // for across the line into console.js drags the tasks and the public pages
 // in behind it (test/console.test.js holds this).
 //
-// One address is not in the column: `/activity/<session>` is one session,
-// which a search result and a machine's row open onto. `back` from it goes
-// to Search, since Search is the page this edition lists sessions on.
 import { api } from "./api.js";
 import { el, problem } from "./console-dom.js";
 import { initModals } from "./modal.js";
@@ -35,6 +38,7 @@ import { searchPage } from "./page-search.js";
 import { toolsPage } from "./page-tools.js";
 import { gitHostsPage } from "./page-git-hosts.js";
 import { sessionPage } from "./page-session.js";
+import { activityPage } from "./page-activity.js";
 import { NO_FILTERS } from "./console-performance.js";
 import { oneWhere } from "./console-where.js";
 import { onePerson } from "./console-edition.js";
@@ -64,25 +68,22 @@ const dom = {
 /**
  * The pages, and what each one is.
  *
- * The four in the column, in the column's order, and one that is an address
- * without a link. `kind` is what a row on a page *is*, which is also what
- * the page draws when the address names one.
+ * The six in the column, in the column's order. `kind` is what a row on a
+ * page *is*, which is also what the page draws when the address names one.
  */
 const PAGES = {
   executors: { path: "/executors", kind: "executor", title: "Executors" },
   performance: { path: "/performance", kind: "ranking", title: "Performance" },
   search: { path: "/search", kind: "discovery", title: "Search" },
+  // What is happening now and what finished lately; one session under it
+  // (`/activity/<id>`), which is also what a search result and a machine's
+  // row open onto. The same address the full console gives a session, so a
+  // link copied out of one console opens in the other.
+  activity: { path: "/activity", kind: "session", title: "Activity" },
   tools: { path: "/tools", kind: "tool", title: "Tools" },
   // The git host a person's pull requests live on, connected with their own
   // token. One row per host and no thing to open, so no `kind`.
   connectors: { path: "/connectors", kind: null, title: "Connectors" },
-  // One session. Named `activity` because that is the address the full
-  // console gives a session and the page module keys off (page-session.js
-  // `wants`), and because a link to a session copied out of one console
-  // should open in the other. `under: null` means no link in the column
-  // lights up while you are on it, which is honest: it is under none of
-  // them.
-  activity: { path: "/activity", kind: "session", title: "Session", under: null },
 };
 
 /** Executors, because its top is the setup line and nothing is on any other page until that has run. */
@@ -91,7 +92,7 @@ const DEFAULT_PAGE = "executors";
 /**
  * Everything this page knows.
  *
- * The fields the six page modules read, and no others - a state with a
+ * The fields the seven page modules read, and no others - a state with a
  * `workspaces` in it would be a promise this edition cannot keep. The
  * shapes are console.js's, because the page modules are.
  */
@@ -101,6 +102,10 @@ const state = {
   executorsPriced: false,
   // The setup line, read only while the Executors list is on screen.
   ingest: null,
+  // What /api/home said: the live sessions and the finished ones. Read on
+  // arrival at Activity and on every refresh while it is open, and on a
+  // clock as well - see the tick in `start`.
+  activity: { data: null, failed: null },
   performance: {
     range: "7d", filters: NO_FILTERS, data: null, failed: null,
     compare: null, compareFailed: null, compareState: { dimension: "provider", table: false },
@@ -142,6 +147,7 @@ const shell = createShell({
   drawPage,
   reads: [
     () => executors.read(),
+    () => activity.read(),
     () => performance.read(),
     () => tools.readList(),
     () => search.read(),
@@ -155,6 +161,7 @@ const shell = createShell({
   // only change on that page.
   readAlways: () => [api.session(), api.executors()],
   rereads: [
+    () => activity.reread(),
     () => performance.reread(),
     () => search.reread(),
     () => oneSession.reread(),
@@ -200,6 +207,9 @@ const performance = performancePage(pageCtx);
 const search = searchPage(pageCtx);
 const tools = toolsPage(pageCtx);
 const oneSession = sessionPage(pageCtx);
+// No `waitingCard`: nothing here is waiting on a person, so the page is
+// drawn without its Needs action section - see page-activity.js.
+const activity = activityPage(pageCtx);
 // The git hosts: three rows, a token box each, and nothing an agent is lent
 // - see page-git-hosts.js.
 const gitHosts = gitHostsPage(pageCtx);
@@ -216,13 +226,21 @@ function drawPage() {
   if (state.page === "connectors") return gitHosts.draw(pane);
 
   if (state.page === "activity") {
-    // `/activity` with nothing under it is not a page here - there is no
-    // list of everybody's work, because everybody is one person. The
-    // address settles on Search, which is the listing this edition has.
-    if (!state.selected) return go(pathFor("search"), { replace: true });
-    pane.append(back(pathFor("search")));
+    if (!state.selected) return activity.draw(pane);
+    pane.append(back(pathFor("activity")));
     oneSession.draw(pane);
   }
+}
+
+/**
+ * Activity and a session are read on a clock as well as on events: a live
+ * card says "started 3m ago", and that is wrong after four whether or not
+ * anything happened. Half a minute, the full console's cadence.
+ */
+function tick() {
+  if (document.hidden) return;
+  if (activity.wants()) activity.tick();
+  else if (oneSession.wants()) oneSession.load().then(render);
 }
 
 async function start() {
@@ -270,6 +288,7 @@ async function start() {
 
   await refresh();
   watch();
+  setInterval(tick, 30_000);
 }
 
 start();
