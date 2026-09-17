@@ -23,6 +23,7 @@
 // and no repos, so every session is theirs. Neither answer belongs in a file
 // that must not import the registry.
 import * as sessionLog from "./sessions.js";
+import { WORDS as WORK_WORDS, described as describedKinds, kindIn } from "./work-kinds.js";
 import * as search from "./search.js";
 import * as discoverAgent from "./discover-agent.js";
 
@@ -85,13 +86,21 @@ export const NAME_SESSION_TOOL = {
     "work; call it again if the work turns into something else - a " +
     "different task, not a detail, a correction or a next step of the same " +
     "one. Until you say, the session is named after the first line of the " +
-    "ask, which is a name only when the ask opens with one.",
+    "ask, which is a name only when the ask opens with one. Say `kind` " +
+    "with it: which kind of work this is, one word from the list, judged " +
+    "by what the work is for rather than what it touches. The Performance " +
+    "page groups sessions by it; a session that never says is 'unsaid'.",
   inputSchema: {
     type: "object",
     properties: {
       title: {
         type: "string",
         description: "What the session is for, in at most eight words. No quotes, no trailing period.",
+      },
+      kind: {
+        type: "string",
+        enum: WORK_WORDS,
+        description: `What kind of work it is, one word: ${describedKinds()}.`,
       },
     },
     required: ["title"],
@@ -130,7 +139,16 @@ function nameSessionTool(args, context) {
   if (!id) return refuse("This connection has no session to name. Initialize first, and send the mcp-session-id header with each call.");
   const kept = sessionLog.nameSession(id, args.title);
   if (!kept) return refuse("A name needs words: say what the session is for, in at most eight words.");
-  return text(`This session is now named "${kept}" on the Activity page. Say so again if the work turns into something else.`);
+  // The kind travels with the name, and the vocabulary travels with the
+  // word: sessions.js refuses anything off the list, so the record can
+  // only ever hold one of the eight. A word the agent invented is said
+  // back to it with the list, and the name is kept regardless - one wrong
+  // word is not a reason to lose the right one.
+  const said = args.kind == null ? null : kindIn(args.kind);
+  const noted = said ? sessionLog.noteWork(id, said, WORK_WORDS) : null;
+  const about = noted ? `, ${said} work,` : "";
+  const refused = args.kind != null && !said ? ` '${String(args.kind).slice(0, 40)}' is not a kind of work here; the kinds are ${WORK_WORDS.join(", ")}.` : "";
+  return text(`This session is now named "${kept}"${about} on the Activity page. Say so again if the work turns into something else.${refused}`);
 }
 
 /**

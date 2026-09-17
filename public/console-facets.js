@@ -39,6 +39,10 @@ export const FACETS = [
   { key: "provider", label: "Model provider", valueOf: (row) => pair(row.provider?.key, row.provider?.name) },
   { key: "user", label: "Person", valueOf: (row) => pair(row.owner, row.owner) },
   { key: "repository", label: "Repository", valueOf: (row) => pair(row.repository, row.repository) },
+  // What kind of work the agent said it was (server/work-kinds.js). A
+  // session that never said has a null key and offers nothing to pick:
+  // "Unsaid" is a row on the kinds table, not a thing anybody ran with.
+  { key: "work", label: "Kind of work", valueOf: (row) => pair(row.work?.key, row.work?.name) },
 ];
 
 /**

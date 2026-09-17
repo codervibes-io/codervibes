@@ -292,6 +292,7 @@ case "$input" in "{"*) ;; *) input="{}" ;; esac
 machine="\${CODERVIBES_MACHINE:-\${E2B_SANDBOX_ID:-$(hostname 2>/dev/null)}}"
 platform="\${CODERVIBES_PLATFORM:-\${E2B_SANDBOX_ID:+e2b}}"
 extra=""
+recall=""
 case "$event" in
   start)
     repo=$(git remote get-url origin 2>/dev/null || true)
@@ -304,7 +305,8 @@ case "$event" in
       lines=$(grep -F '"type":"assistant"' "$path" 2>/dev/null | tail -n 5 | tr '\\n' ',')
     fi
     extra=",\\"transcript\\":[\${lines%,}]" ;;
-  prompt|tool|done|file|subagent) ;;
+  prompt) recall=1 ;;
+  tool|done|file|subagent) ;;
   *) exit 0 ;;
 esac
 spool="$HOME/.codervibes/spool"
@@ -317,6 +319,21 @@ printf %s "{\\"event\\":\\"$event\\",\\"session\\":\\"$session\\",\\"at\\":$now$
 set -- "$spool"/*.json
 [ $# -gt 5000 ] && rm -f "$1"
 "$HOME/.codervibes/ship" </dev/null >/dev/null 2>&1 &
+# The prompt is the one event that waits: what was done here before, asked
+# with the prompt and the branch, comes back as context the harness puts
+# under it (the context cache - recall.js). One short call, a second to
+# connect and four in all, and an app that is down or slow costs the
+# prompt that second and hands back nothing. CODERVIBES_RECALL=0 turns it
+# off without touching the reporting.
+if [ -n "$recall" ] && [ "\${CODERVIBES_RECALL:-1}" != 0 ]; then
+  branch=$(git branch --show-current 2>/dev/null || true)
+  found=$(printf %s "{\\"session\\":\\"$session\\",\\"branch\\":\\"$branch\\",\\"origin\\":\\"$CODERVIBES_ORIGIN\\",\\"input\\":$input}" |
+    curl -s --connect-timeout 1 -m 4 -X POST "$CODERVIBES_ORIGIN/api/harness/recall" \\
+     ${tokenless ? "" : ` -H "Authorization: Bearer $CODERVIBES_TOKEN"`} -H "Content-Type: application/json" -d @- 2>/dev/null) || found=""
+  # Only the answer is printed: the harness takes anything on stdout as
+  # context for the model, and an error page or a proxy's apology is not.
+  case "$found" in '{"hookSpecificOutput"'*) printf %s "$found" ;; esac
+fi
 exit 0
 EOF
 chmod 755 "$CV/report"

@@ -28,6 +28,7 @@ import { platformOf } from "./machine-source.js";
 import * as ingest from "./telemetry-ingest.js";
 import { withSpan } from "./telemetry.js";
 import * as sessionLog from "./sessions.js";
+import * as recall from "./recall.js";
 
 /** How big one export may be. Claude Code's default batch is a few hundred events; a day's backlog after a laptop wakes is more. */
 export const MAX_EXPORT_BYTES = Number(process.env.CODERVIBES_OTLP_MAX_BYTES ?? 8 * 1024 * 1024);
@@ -94,7 +95,10 @@ async function whoIs(req, res, authenticate) {
  * what it said about itself, which is what every machine that is not a
  * sandbox already relies on. `authenticate` is above.
  */
-export function mountOtlp(app, { e2bKeyFor = async () => null, authenticate = null } = {}) {
+/** How big a recall request may be: a prompt and a branch name. */
+export const RECALL_MAX_BYTES = 256 * 1024;
+
+export function mountOtlp(app, { e2bKeyFor = async () => null, authenticate = null, mayRead = () => () => true } = {}) {
   const json = express.json({ limit: MAX_EXPORT_BYTES, type: ["application/json", "application/x-protobuf"] });
 
   const route = (signal, read) =>
@@ -228,6 +232,53 @@ export function mountOtlp(app, { e2bKeyFor = async () => null, authenticate = nu
       // A batch that failed part way: what was noted is said, so a reader
       // with curl can see how far it got; the shipper keeps the whole batch.
       res.status(err.status ?? 500).json({ error: { message: err.message }, noted: batch ? noted : undefined });
+    }
+  });
+
+  /**
+   * The context cache (recall.js). The prompt hook sends the prompt as
+   * it is submitted and waits - the one hook that does - for what was
+   * done here before, and prints the answer for the harness to put under
+   * the prompt. Two hundred and four when there is nothing to say: a
+   * prompt with no words in it, no past turn like it, no index yet. The
+   * hook prints an empty body as nothing, and an empty answer costs the
+   * agent nothing to read.
+   *
+   * `mayRead` is the owner's reading rule (index.js): a turn from a
+   * session the owner cannot open is not offered. The session the prompt
+   * belongs to is the same record the spooled prompt event lands on, so
+   * the count of what was offered sits on the session the agent is in.
+   */
+  app.post("/api/harness/recall", express.json({ limit: RECALL_MAX_BYTES }), async (req, res) => {
+    const who = await whoIs(req, res, authenticate);
+    if (!who) return;
+    const body = req.body ?? {};
+    const prompt = String(body.input?.prompt ?? body.prompt ?? "").trim();
+    const harnessSession = String(body.session ?? body.input?.session_id ?? "").trim();
+    if (!prompt || !recall.worthAsking(prompt)) {
+      res.status(204).end();
+      return;
+    }
+    try {
+      // The session the prompt belongs to - opened here when this is its
+      // first prompt and the spooled event has not landed yet, so the two
+      // meet on one record - but never taken back live: a recall is a
+      // question about the past, not work on the session.
+      const record = harnessSession ? await ingest.sessionFor(who, harnessSession, { at: Date.now(), revive: false }) : null;
+      const { hits } = await recall.recall(prompt, {
+        branch: String(body.branch ?? "").trim() || null,
+        session: record?.id ?? null,
+        allow: mayRead(who.user),
+      });
+      if (record) sessionLog.noteRecall(record.id, { offered: hits.length });
+      if (!hits.length) {
+        res.status(204).end();
+        return;
+      }
+      const origin = /^https?:\/\/[^\s/]+$/.test(String(body.origin ?? "")) ? String(body.origin) : null;
+      res.status(200).json(recall.hookOutput(recall.contextOf(hits, { origin })));
+    } catch (err) {
+      res.status(err.status ?? 500).json({ error: { message: err.message } });
     }
   });
 }

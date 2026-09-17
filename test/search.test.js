@@ -331,7 +331,8 @@ test("a session is indexed from the sessions module as its log lands, once it se
       const doc = search.get(`session:${record.id}`);
       return doc?.session.state === "ended" && doc.vector ? doc : null;
     }, "embedded once ended");
-    assert.equal(embeds.length, 1);
+    // Two texts: the session's one turn, as a list of its own, and then the session.
+    assert.equal(embeds.length, 2);
     const kept = (await sessionLog.get(record.id)).search;
     assert.equal(kept?.model, "fake-concepts");
     assert.equal(kept.dims, ended.vector.length);
@@ -345,7 +346,7 @@ test("a session is indexed from the sessions module as its log lands, once it se
       const n = await search.warm({ since: 0 });
       assert.ok(n >= 1);
       assert.ok(search.get(`session:${record.id}`).vector, "the vector is back");
-      assert.equal(embeds.length, 1, "and was not made again");
+      assert.equal(embeds.length, 2, "and was not made again - nor were the turns'");
     } finally {
       delete process.env.CODERVIBES_EMBEDDING_MODEL;
     }
@@ -359,7 +360,7 @@ test("the catalogue is replaced whole, and a session document is left alone by t
   assert.equal(search.describe().indexed.connector, 1);
   await search.indexCatalog({ connectors: [], tools: [{ name: "linear_issues", description: "The issues of a Linear team." }], skills: [] });
   const { indexed } = search.describe();
-  assert.deepEqual(indexed, { session: 3, connector: 0, tool: 1, skill: 0 });
+  assert.deepEqual(indexed, { session: 3, turn: 0, connector: 0, tool: 1, skill: 0 });
   assert.ok(search.get("session:s-deploy"));
   assert.equal(search.get("connector:fly"), null);
   search.remove("session:s-deploy");

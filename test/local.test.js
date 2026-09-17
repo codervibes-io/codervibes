@@ -321,6 +321,31 @@ test("a session reported with no credential reaches every page", async () => {
   assert.equal(activity.body.finished[0].files, undefined, "a finished row is a line in a table, not the session's page");
 });
 
+test("a prompt asks what was done here before and gets the turn that did it - with what it ran and the session to open - or nothing at all", async () => {
+  // The session above ended; its one turn is indexed once the index settles.
+  const deadline = Date.now() + 5000;
+  let answer;
+  for (;;) {
+    answer = await post("/api/harness/recall", { session: "local-2", branch: "deploy-idempotent", origin: base, input: { session_id: "local-2", prompt: "make the deploy script safe to run twice" } });
+    if (answer.status === 200 || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  const block = answer.body.hookSpecificOutput.additionalContext;
+  assert.equal(answer.body.hookSpecificOutput.hookEventName, "UserPromptSubmit");
+  assert.match(block, /^## Done here before\n/);
+  assert.match(block, new RegExp(`1\\. "Make the deploy script idempotent" - .*, session ${sessionId} ${base}/activity/${sessionId}`));
+  assert.match(block, /ran: run_command: npm test/, "the calls are the payload: what the turn ran, by the ingest's names");
+  assert.match(block, /ended: Done\./);
+  assert.match(block, /open_session <id>/, "the instruction travels with the data");
+
+  // A prompt with nothing in it is not asked about, and the asking session is never handed itself.
+  const filler = await post("/api/harness/recall", { session: "local-2", input: { session_id: "local-2", prompt: "sounds good, go ahead" } });
+  assert.equal(filler.status, 204);
+  const self = await post("/api/harness/recall", { session: "local-1", input: { session_id: "local-1", prompt: "make the deploy script safe to run twice" } });
+  assert.equal(self.status, 204, "local-1 is the session that did it; it has its own transcript");
+});
+
 test("three machines are seated, the fourth is told why not, and forgetting one makes room", async () => {
   const start = (machine, session) => post("/api/harness/session", { event: "start", session, machine });
 
@@ -645,6 +670,23 @@ test("the column is six pages, in the order the edition puts them in", () => {
   assert.match(entry, /pane\.append\(back\(pathFor\("activity"\)\)\);/, "back from a session goes to Activity");
 });
 
+test("the Evaluations page is the hosted product's: this edition has no link to it, and its Performance page says where it is by name", async () => {
+  // The page is the loop a team runs on its repositories (server/pages/
+  // evaluations.js) and the one thing the free edition points at rather
+  // than leaving off in silence - by name, never by address: the
+  // open-source cut carries no address it would call (test/local-cut.test.js).
+  assert.doesNotMatch(html, /data-page="evaluations"/, "the column links to a page this edition has not got");
+  assert.doesNotMatch(entry, /evaluations: \{ path:/, "the router knows a page this edition has not got");
+  assert.doesNotMatch(entry, /page-evaluations\.js/);
+  assert.match(entry, /onePerson\(\)/);
+  const performance = await read("public", "console-performance.js");
+  assert.match(performance, /import \{[^}]*hasEvaluations[^}]*\} from "\.\/console-edition\.js"/);
+  assert.match(performance, /if \(hasEvaluations\(\)\) \{/);
+  assert.match(performance, /on the hosted edition at codervibes\.io\./, "the line names where the page is");
+  assert.doesNotMatch(performance, /https:\/\/codervibes\.io/, "and not as an address the cut would carry");
+  assert.match(performance, /pane\.append\(evaluationsLine\(\{ onOpen, pathFor \}\)\);/, "and the line is on the page");
+});
+
 test("every page the client knows is a page the server serves, and the reverse", () => {
   const known = [...entry.matchAll(/^  ([a-z]+): \{ path: "(\/[a-z]+)"/gm)].map((match) => match[2]);
   assert.deepEqual(known, ["/executors", "/performance", "/search", "/activity", "/tools", "/connectors"]);
@@ -736,7 +778,7 @@ test("every predicate an edition can turn off is on until somebody turns it off"
   // Each is read as a call, not exported as a value: a value is read once at
   // import and a module imported before `onePerson()` ran would keep the
   // answer it was given first.
-  for (const name of ["hasTasks", "hasWorkspaces", "hasAgents", "hasSandboxes", "hasAccessTrail", "hasConnectorTools"]) {
+  for (const name of ["hasTasks", "hasWorkspaces", "hasAgents", "hasSandboxes", "hasAccessTrail", "hasConnectorTools", "hasEvaluations"]) {
     assert.match(edition, new RegExp(`export const ${name} = \\(\\) =>`), `${name} is not a predicate`);
   }
 });

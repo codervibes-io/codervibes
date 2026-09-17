@@ -37,8 +37,18 @@ import * as sessionEvents from "./session-events.js";
 import * as spans from "./spans.js";
 import { PROVIDERS, providerOf } from "./models.js";
 
-/** What a document is: a session, or one of the catalogue's three kinds. */
-export const KINDS = ["session", "connector", "tool", "skill"];
+/**
+ * What a document is: a session, one turn of a session, or one of the
+ * catalogue's three kinds. A turn is one prompt and what the agent did
+ * until the next one - the unit the recall (recall.js) hands an agent as
+ * it starts on a prompt, because a prompt is the size of a turn, not of a
+ * session: the session that did the thing three weeks ago did forty other
+ * things too, and its document is the head of them. The Search page and
+ * the discover tool show the other four kinds (PAGE_KINDS); a turn is
+ * found by asking for it.
+ */
+export const KINDS = ["session", "turn", "connector", "tool", "skill"];
+export const PAGE_KINDS = ["session", "connector", "tool", "skill"];
 
 /** How far back sessions are indexed at boot - the sessions' month, and the events'. */
 export const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
@@ -69,7 +79,7 @@ const RRF_K = 60;
  * above it - which BM25 alone would do, since a two-line tool description
  * that says "deploy" twice outscores a long transcript that said it once.
  */
-const PRIOR = { session: 1, connector: 0.6, tool: 0.6, skill: 0.6 };
+const PRIOR = { session: 1, turn: 1, connector: 0.6, tool: 0.6, skill: 0.6 };
 
 // ------------------------------------------------------------------ words
 
@@ -452,10 +462,10 @@ export function snippet(doc, terms, { width = 240 } = {}) {
  * snippet is the head of the document, since no word was asked for.
  */
 function newest({ limit = 20, kinds = null, since = 0, allow = () => true } = {}) {
-  const wantedKinds = kinds?.length ? new Set(kinds) : null;
+  const wantedKinds = new Set(kinds?.length ? kinds : PAGE_KINDS);
   const found = [];
   for (const doc of docs.values()) {
-    if (wantedKinds && !wantedKinds.has(doc.kind)) continue;
+    if (!wantedKinds.has(doc.kind)) continue;
     if (since && doc.at && doc.at < since) continue;
     if (!allow(doc)) continue;
     found.push(doc);
@@ -471,7 +481,9 @@ function newest({ limit = 20, kinds = null, since = 0, allow = () => true } = {}
 
 /**
  * The best documents for a question. `allow` says which the asker may see
- * at all; `kinds` and `since` narrow the rest. Each hit says how it was
+ * at all; `kinds` and `since` narrow the rest - the page's four kinds
+ * unless the caller names others, so that the turns, which say what a
+ * session already says, are not rows beside it. Each hit says how it was
  * found (`why`: the words that matched, and whether the meaning did), so
  * the page can say why a row is there.
  */
@@ -519,13 +531,13 @@ export async function query(text, { limit = 20, kinds = null, since = 0, allow =
   };
   note(lexicalHits, "lexical");
   note(semanticHits, "semantic");
-  const wantedKinds = kinds?.length ? new Set(kinds) : null;
+  const wantedKinds = new Set(kinds?.length ? kinds : PAGE_KINDS);
   const hits = [];
   for (const entry of fused.values()) entry.score *= PRIOR[docs.get(entry.id)?.kind] ?? 1;
   for (const entry of [...fused.values()].sort((x, y) => y.score - x.score)) {
     const doc = docs.get(entry.id);
     if (!doc) continue;
-    if (wantedKinds && !wantedKinds.has(doc.kind)) continue;
+    if (!wantedKinds.has(doc.kind)) continue;
     if (since && doc.at && doc.at < since) continue;
     if (!allow(doc)) continue;
     // A semantic-only hit well below the neighbourhood is noise, not a find.
@@ -625,17 +637,107 @@ export function sessionDocument(session, events = [], sessionSpans = []) {
   };
 }
 
+/** How much of a turn's prompt its document keeps, how much of what was said, and how many calls. */
+export const TURN_PROMPT_CHARS = 2000;
+export const TURN_SAID_CHARS = 3000;
+export const TURN_CALLS = 60;
+
 /**
- * Rebuild one session's document from what is known of it. A stored vector
- * on the record is reused when it is the current model's; otherwise an
- * ended session is embedded and the vector kept on its record, while a
- * live one waits for its end - it is still changing, and embedding every
- * turn would be paying for the same words over and over.
+ * A session's turns as documents: one per prompt, with what the agent
+ * reached for and said until the next prompt. The prompt first, then the
+ * calls, then the tail of what was said - the same order as the session's
+ * document, for the same reason: the head is what the embedder reads, and
+ * a question is about the ask and the names.
+ *
+ * The turns were measured against the sessions, on 552 prompts from this
+ * repository's own transcripts (docs/recall.md). A session document is the
+ * easier thing to hit - it is forty prompts wide - but what an agent is
+ * handed from a hit is a few hundred characters, and a turn's few hundred
+ * name the file or the command the prompt went on to need more often than
+ * a session's do. And a turn is a pointer an agent can act on: this
+ * prompt, these calls, rather than a session it would have to read whole.
+ */
+export function turnDocuments(session, events = []) {
+  const turns = [];
+  let turn = null;
+  for (const entry of events) {
+    switch (entry.kind) {
+      case "user_message_chunk":
+      case "platform.prompt": {
+        if (!entry.text) break;
+        const at = entry.at ?? session.startedAt ?? 0;
+        turn = { index: turns.length, at, endAt: at, prompt: String(entry.text), tools: new Set(), calls: [], said: [] };
+        turns.push(turn);
+        break;
+      }
+      case "agent_message_chunk":
+        if (turn && entry.text) {
+          turn.said.push(entry.text);
+          turn.endAt = entry.at ?? turn.endAt;
+        }
+        break;
+      case "tool_call":
+        if (!turn) break;
+        if (entry.tool && entry.tool !== "tool") turn.tools.add(String(entry.tool));
+        if (entry.title) turn.calls.push(entry.tool && entry.tool !== "tool" && !entry.title.startsWith(`${entry.tool}:`) ? `${entry.tool}: ${entry.title}` : entry.title);
+        turn.endAt = entry.at ?? turn.endAt;
+        break;
+      default:
+    }
+  }
+  return turns.map((t) => {
+    const calls = [...new Set(t.calls)].slice(0, TURN_CALLS);
+    const said = t.said.join("\n");
+    const parts = [`Asked: ${t.prompt.slice(0, TURN_PROMPT_CHARS)}`];
+    if (t.tools.size) parts.push(`Reached for: ${[...t.tools].join(", ")}`);
+    if (calls.length) parts.push(`Calls: ${calls.join("; ")}`);
+    if (said) parts.push(`Said: ${said.slice(-TURN_SAID_CHARS)}`);
+    return {
+      id: `turn:${session.id}:${t.index}`,
+      kind: "turn",
+      title: t.prompt.split(/\r?\n/).find((line) => line.trim())?.trim().slice(0, 300) ?? "",
+      text: parts.join("\n\n"),
+      at: t.at,
+      tools: [...t.tools],
+      connectors: [],
+      skills: [],
+      session: {
+        id: session.id,
+        owner: session.owner ?? null,
+        repoId: session.repoId ?? null,
+        repo: session.repo ?? null,
+        actor: session.actor ?? null,
+        state: session.state ?? null,
+        startedAt: session.startedAt ?? null,
+        endedAt: session.endedAt ?? null,
+        pulls: session.pulls ?? null,
+      },
+      turn: { index: t.index, at: t.at, endAt: t.endAt, calls, said: said.slice(-600) },
+    };
+  });
+}
+
+/** The turn documents of one session that the index holds, in order. */
+export function turnsOf(sessionId) {
+  const out = [];
+  for (const doc of docs.values()) if (doc.kind === "turn" && doc.session?.id === sessionId) out.push(doc);
+  return out.sort((x, y) => x.turn.index - y.turn.index);
+}
+
+/**
+ * Rebuild one session's document, and its turns', from what is known of
+ * it. A stored vector on the record is reused when it is the current
+ * model's; otherwise an ended session is embedded and the vectors kept on
+ * its record, while a live one waits for its end - it is still changing,
+ * and embedding every turn would be paying for the same words over and
+ * over. The turns go to the embedder as one list when the session ends:
+ * one round trip a session, not one a turn.
  */
 export async function indexSession(sessionId) {
   const session = await sessionLog.get(String(sessionId));
   if (!session) {
     remove(`session:${sessionId}`);
+    for (const doc of turnsOf(String(sessionId))) remove(doc.id);
     return null;
   }
   const [events, records] = await Promise.all([
@@ -643,13 +745,30 @@ export async function indexSession(sessionId) {
     Promise.resolve(spans.forSession(session.id, { limit: 500 })).catch(() => []),
   ]);
   const doc = sessionDocument(session, events, records);
+  const turns = turnDocuments(session, events);
   const model = embedder()?.model ?? null;
   const stored = session.search;
-  if (model && stored?.model === model && stored.v) doc.vector = unpack(stored.v);
+  const reuse = Boolean(model && stored?.model === model);
+  if (reuse && stored.v) doc.vector = unpack(stored.v);
   const ended = session.state !== "live";
+  let turnVectors = reuse && Array.isArray(stored.turns) && stored.turns.length === turns.length ? stored.turns.map(unpack) : null;
+  let freshTurns = false;
+  if (!turnVectors && ended && model && turns.length) {
+    turnVectors = await embed(turns.map(embedTextOf));
+    freshTurns = Boolean(turnVectors);
+  }
+  // Last time's turns are replaced whole: the prompt that was live then
+  // has more under it now, and a session re-read from the store may have
+  // fewer than the index remembers.
+  for (const old of turnsOf(session.id)) remove(old.id);
+  await Promise.all(turns.map((turn, i) => index(turnVectors?.[i] ? { ...turn, vector: turnVectors[i] } : turn)));
+  const packedTurns = turnVectors ? turnVectors.map(pack) : undefined;
+  // Fresh turn vectors beside a session vector that was reused are kept
+  // now; when the session's own is made below, the two go together.
+  if (freshTurns && doc.vector) await sessionLog.noteSearch(session.id, { model, dims: doc.vector.length, v: stored.v, turns: packedTurns });
   return index(doc, {
     embed: ended,
-    onVector: (vector) => sessionLog.noteSearch(session.id, { model, dims: vector.length, v: pack(vector) }),
+    onVector: (vector) => sessionLog.noteSearch(session.id, { model, dims: vector.length, v: pack(vector), turns: packedTurns }),
   });
 }
 

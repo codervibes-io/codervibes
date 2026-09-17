@@ -437,6 +437,10 @@ export function open({
     outcome: null,
     // What it was for, in the asker's words - see the essay, and `noteTitle`.
     title: null,
+    // What kind of work it is, in the agent's one word (work-kinds.js) -
+    // see `noteWork`. Null until the agent says; a page reads null as
+    // "unsaid", never as a kind of its own.
+    work: null,
   };
   records.set(record.id, record);
   // Woken by a task somebody asked for in a Slack thread: that thread is
@@ -813,6 +817,38 @@ export function nameSession(id, text) {
   rename(id, title);
   return record.title;
 }
+
+/**
+ * The agent's one word for what kind of work the session is (work-kinds.js
+ * `WORDS`), said through the same tool as the name. Replaces whatever the
+ * word was: when the work turns into something else the agent says so
+ * again, and the kind follows the name.
+ *
+ * `allowed` is the vocabulary, required rather than defaulted, for the
+ * reason `steered` gives: the word lands on a durable record that pages
+ * group by, so a word off the list is refused here, and a caller that
+ * names no list writes nothing. Handed in rather than imported for the
+ * same reason too - this module is the record and stays a leaf. Returns
+ * the record, or null when nothing was kept.
+ *
+ * @param {string} id
+ * @param {string} kind one word
+ * @param {string[]|Set<string>} allowed the kinds a record may hold
+ */
+export function noteWork(id, kind, allowed) {
+  const record = records.get(id);
+  const word = String(kind ?? "").trim();
+  const vocabulary = allowed instanceof Set ? allowed : new Set(Array.isArray(allowed) ? allowed : []);
+  if (!record || !vocabulary.has(word)) return null;
+  if (record.work === word) return record;
+  record.work = word;
+  persist(id, { now: true });
+  publish("session.title", { owner: record.owner, repoId: record.repoId }, { sessionId: id });
+  return record;
+}
+
+/** The kind of work a record says it is, or null when it never said. */
+export const workOf = (record) => (typeof record?.work === "string" && record.work ? record.work : null);
 
 /** Put a name on the record, cut like any title, and nudge the pages showing it. */
 function rename(id, name) {
@@ -1284,6 +1320,11 @@ export async function warm({ since = Date.now() - WARM_MS, now = Date.now() } = 
  */
 export async function noteSearch(id, search) {
   const kept = search ? { model: String(search.model ?? ""), dims: Number(search.dims) || 0, v: String(search.v ?? "") } : null;
+  // The turns' vectors beside the session's, when the index made them
+  // (search.js `indexSession`): one packed vector a turn, in turn order.
+  // Absent rather than empty when there are none - a store marshals an
+  // undefined key badly and an empty list says something false.
+  if (kept && Array.isArray(search.turns) && search.turns.length) kept.turns = search.turns.map(String);
   const record = records.get(id);
   if (record) {
     record.search = kept;
@@ -1295,6 +1336,33 @@ export async function noteSearch(id, search) {
   if (!stored) return false;
   await store.putSession({ ...stored, search: kept });
   return true;
+}
+
+/**
+ * The recall asked on this session's behalf (recall.js): a prompt came
+ * in, the index was asked what was done here before, and this many past
+ * turns were handed to the agent with it. Counted on the record so the
+ * Performance page can split sessions that were handed history from
+ * sessions that were not - which is the whole of how "does this help" is
+ * ever going to be answered - and so a session's page can say it.
+ */
+export function noteRecall(id, { offered = 0 } = {}) {
+  const record = records.get(id);
+  if (!record) return null;
+  const counts = record.counts ?? (record.counts = emptyCounts());
+  const recall = counts.recall && typeof counts.recall === "object" ? counts.recall : { asked: 0, offered: 0, hits: 0 };
+  recall.asked = (recall.asked ?? 0) + 1;
+  recall.offered = (recall.offered ?? 0) + Math.max(0, Number(offered) || 0);
+  if (offered > 0) recall.hits = (recall.hits ?? 0) + 1;
+  counts.recall = recall;
+  persist(id);
+  return recall;
+}
+
+/** How much history a session was handed, read defensively like the other counts. */
+export function recallOf(record) {
+  const recall = record?.counts?.recall;
+  return { asked: recall?.asked ?? 0, offered: recall?.offered ?? 0, hits: recall?.hits ?? 0 };
 }
 
 /** End the idle, forget the long-ended. */

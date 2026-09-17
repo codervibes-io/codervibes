@@ -1428,6 +1428,30 @@ class RepoRegistry {
     return merged;
   }
 
+  /**
+   * What somebody did about a recommendation the Evaluations page raised
+   * on this repository: adopted, and how; dismissed; reopened
+   * (evaluations.js `act`). On the repository for the same reason the
+   * harness changes are - a handful, read whole, meaningless apart from
+   * the repository whose CLAUDE.md the fix went into - and beside them,
+   * because an adoption very often *is* one of them.
+   *
+   * The whole list is handed in already changed; this only keeps it. A
+   * write the store refused is warned about and not thrown, the way the
+   * harness changes are: the person who pressed Adopt sees it adopted,
+   * and the next process may not - which is worth a line in the log and
+   * not a 500 on a press.
+   */
+  async noteEvaluations(repoId, records) {
+    const repo = this.repos.get(repoId);
+    if (!repo || !Array.isArray(records)) return null;
+    repo.evaluations = records;
+    await this.save(repo).catch((err) => {
+      console.warn(`[repos] could not store the evaluations of ${repo.id}: ${err.message}`);
+    });
+    return records;
+  }
+
   /** Note that an agent is alive. Persisted lazily - it is only a timestamp. */
   async touchAgent(repoId, agentId) {
     const repo = this.repos.get(repoId);

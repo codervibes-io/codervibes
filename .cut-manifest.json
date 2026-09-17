@@ -1,6 +1,6 @@
 {
-  "cutFrom": "3594c4796394ddf385f4ae876c6ceac367feff09",
-  "cutAt": "2026-09-16T07:20:00.070Z",
+  "cutFrom": "5931b8f0b507d10d4b84f2d9a31d99b0684af820",
+  "cutAt": "2026-09-17T22:37:47.215Z",
   "files": [
     ".gitignore",
     "LICENSE",
@@ -102,6 +102,7 @@
     "server/pull-cost.js",
     "server/pull-opened.js",
     "server/pulls.js",
+    "server/recall.js",
     "server/replay.js",
     "server/repo-sources/shape.js",
     "server/repos.js",
@@ -124,6 +125,7 @@
     "server/usage-stats.js",
     "server/user-record.js",
     "server/wake.js",
+    "server/work-kinds.js",
     "server/workspaces.js",
     "test/action-approvals.test.js",
     "test/adoption.test.js",
@@ -145,12 +147,14 @@
     "test/model-dialects.test.js",
     "test/performance.test.js",
     "test/pull-opened.test.js",
+    "test/recall.test.js",
     "test/search.test.js",
     "test/session-events.test.js",
     "test/spans.test.js",
     "test/task-persistence.test.js",
     "test/task-usage.test.js",
     "test/telemetry.test.js",
-    "test/tool-stats.test.js"
+    "test/tool-stats.test.js",
+    "test/work-kinds.test.js"
   ]
 }

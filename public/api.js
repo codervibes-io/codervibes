@@ -216,6 +216,15 @@ export const api = {
     listing(`/api/performance/friction?range=${encodeURIComponent(range)}&by=${encodeURIComponent(by)}`),
   /** What was changed about how the agents work here, and what happened either side of each change. */
   performanceHarness: (range = "7d") => listing(`/api/performance/harness?range=${encodeURIComponent(range)}`),
+  /**
+   * The Evaluations page: the worst sessions of the range with what was
+   * found on each, and the recommendations with what became of them
+   * (server/pages/evaluations.js). One read; the write is what somebody
+   * did about one recommendation - adopt (with a mechanism, or the sha of
+   * a harness change), dismiss, reopen.
+   */
+  evaluations: (range = "7d") => listing(`/api/evaluations?range=${encodeURIComponent(range)}`),
+  evaluationAct: (id, body) => request(`/api/evaluations/${encodeURIComponent(id)}`, json(body)),
   /** How far each person has taken this: the share, the ladder, and where the team is. */
   performanceAdoption: (range = "7d") => listing(`/api/performance/adoption?range=${encodeURIComponent(range)}`),
   tools: (range = "7d") => listing(`/api/tools?range=${encodeURIComponent(range)}`),

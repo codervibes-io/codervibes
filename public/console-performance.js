@@ -48,7 +48,7 @@ import { adoptionPanel } from "./console-adoption.js";
 import { trendView, SPLITS } from "./console-trend.js";
 import { frictionView } from "./console-friction.js";
 import { whereFilter, whereChip, whereLabel } from "./console-where.js";
-import { hasTasks, hasWorkspaces } from "./console-edition.js";
+import { hasTasks, hasWorkspaces, hasEvaluations } from "./console-edition.js";
 
 /** How far back the ranking looks; the server's ranges. */
 export const RANGES = [
@@ -56,6 +56,39 @@ export const RANGES = [
   { key: "7d", label: "7 days" },
   { key: "30d", label: "30 days" },
 ];
+
+/**
+ * One line under the panels that points at the Evaluations page - the
+ * worst sessions of this range, what to change, whether it worked. On the
+ * hosted product it is a link; on the local edition (console-edition.js
+ * `hasEvaluations`) it says that the page is the hosted product's, by
+ * name and not by address - the open-source cut carries no address it
+ * would call (test/local-cut.test.js), and a person who wants the page
+ * knows where the product lives. A ranking with no "so what" under it is
+ * a page somebody reads once.
+ */
+export function evaluationsLine({ onOpen, pathFor }) {
+  const line = el("p", "perf-evaluate");
+  if (hasEvaluations()) {
+    const path = pathFor("evaluations");
+    const link = el("a", "perf-evaluate-link", "Evaluate the worst sessions of this range →");
+    link.href = path;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      onOpen(path);
+    });
+    line.append(link, el("span", "perf-evaluate-note", " What the worst have in common, the change that usually removes it, and whether the last change made worked."));
+    return line;
+  }
+  line.append(
+    el(
+      "span",
+      "perf-evaluate-note",
+      "Which sessions went worst, what to change about how the agents work here, and whether it worked: that is the Evaluations page, on the hosted edition at codervibes.io.",
+    ),
+  );
+  return line;
+}
 
 /**
  * The dropdown that picks a range. Always one of them - there is no
@@ -127,6 +160,29 @@ export function exportPicker(range) {
 export const NO_FILTERS = Object.freeze({ picks: [], session: "" });
 
 const percent = (rate) => (rate == null ? "—" : `${Math.round(rate * 100)}%`);
+
+/**
+ * The kinds of work, with what each means - the agent's vocabulary
+ * (server/work-kinds.js `KINDS`), said here a second time because a page
+ * cannot import a server module; test/console.test.js holds the two lists
+ * to the same words.
+ */
+export const WORK_MEANING = {
+  code: "a change meant to land: a feature, a fix, a refactor, a pull request",
+  incident: "something running is broken; find out why and bring it back",
+  analysis: "read data and answer with figures or findings",
+  experiment: "run something to learn from it: a benchmark, an evaluation, a prototype, an A/B",
+  review: "read somebody else's change and judge it",
+  question: "answer a question about the code or the system, changing nothing",
+  ops: "planned operations: deploy, configure, migrate, rotate, provision",
+  writing: "docs, a spec, a plan, a message",
+};
+
+const WORK_HELP =
+  "The agent's own word for what the session was for, said through the name_session tool " +
+  "when it read the ask - nothing here guesses one. " +
+  Object.entries(WORK_MEANING).map(([word, meaning]) => `${word}: ${meaning}`).join(". ") +
+  ". A session whose agent never said is on the Unsaid row.";
 const one = (n) => (n == null ? "—" : Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 // ---- pull-cost ----
@@ -265,6 +321,10 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
   // outright, because a pick reframes them: they are drawn again, around
   // the picked thing's own dimension.
   const yieldPane = el("div", "perf-yield-slot");
+  // The kinds of work, under the yield: "of everything run, what came of
+  // it" and then "of which kind, and how well" - the second question a
+  // person asks of the first, and the one that says where to look.
+  const kindsPane = el("div", "perf-kinds-slot");
   // ---- pull-cost ----
   const costPane = el("div", "perf-cost-slot");
   // ---- end pull-cost ----
@@ -274,7 +334,7 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
   // question a person opens this page with, and it is the only panel here
   // that counts the sessions which took nothing on at all.
   // Then what a change costs, which is the same range priced (pull-cost.js).
-  pane.append(yieldPane, costPane, comparePane, trendPane);
+  pane.append(yieldPane, kindsPane, costPane, comparePane, trendPane);
 
   // Harness changes, under the trend and above the ranking: it is about the
   // range the way the panels above it are, but it is the only one that asks
@@ -283,6 +343,13 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
   // being added to from three directions at once.
   const harnessPane = harnessView({ data: harness, failed: harnessFailed });
   if (harnessPane) pane.append(harnessPane);
+
+  // The action item. Everything above says how the range went; the
+  // Evaluations page says what to do about the worst of it and whether the
+  // last thing done worked. Where the page is not here - the local edition
+  // - the line says where it is, rather than leaving a reader to wonder
+  // what the ranking is *for*.
+  pane.append(evaluationsLine({ onOpen, pathFor }));
 
   // Who has taken this up. After the harness changes and before the
   // ranking: the panels above are about the work, this one is about the
@@ -306,6 +373,7 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     const framed = framedBy(picks);
     const split = framedBy(picks, SPLITS.map((entry) => entry.key));
     yieldPane.replaceChildren(...[yieldTiles()].filter(Boolean));
+    kindsPane.replaceChildren(...[kindsTable()].filter(Boolean));
     // ---- pull-cost ----
     costPane.replaceChildren(...[costTiles()].filter(Boolean));
     // ---- end pull-cost ----
@@ -390,6 +458,11 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     onFilter(current);
     redraw();
   };
+  /** Add one pick to the filter - a row of the kinds table pressed. A declaration, so the closures drawn before this line can reach it. */
+  function pick(key) {
+    const picks = current.picks ?? [];
+    set({ picks: picks.includes(key) ? picks : [...picks, key] });
+  }
   search.addEventListener("input", () => set({ session: search.value }));
 
   function redraw() {
@@ -467,6 +540,107 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     return panel;
   }
 
+  /**
+   * The kinds of work in the range, and how each fared: sessions, tasks
+   * finished and the rate, how many landed first time, how much stepping
+   * in a finished one took, how many sessions came to nothing, and what a
+   * task cost. One row a kind, in the agent's own words
+   * (server/work-kinds.js), and a last row for the sessions whose agent
+   * never said - drawn, where the other dimensions' remainders are only
+   * counted, because "how many never said" is the figure that says whether
+   * the rest can be believed.
+   *
+   * Read off the comparison's answer, like the yield tiles above: the
+   * server groups by `work` as it groups by provider or harness, so a
+   * kind's rate is the same arithmetic as a provider's. Never narrowed by
+   * the filters, for the same reason as the yield - these are the range.
+   */
+  function kindsTable() {
+    const rows = compare?.dimensions?.work ?? [];
+    const unsaid = compare?.unreported?.work ?? null;
+    if (!rows.length && !unsaid) return null;
+    const panel = el("section", "console-panel perf-kinds");
+    const heading = el("h3", "panel-heading", "Kinds of work");
+    heading.append(helpMark("a kind of work", WORK_HELP));
+    panel.append(heading);
+    // Tasks are what a kind finishes; where none is ever handed out
+    // (console-edition.js) the table keeps what counts sessions.
+    const table = listTable({
+      head: hasTasks()
+        ? ["Kind", "Sessions", tasksHead(), "Rate", "First time", "Steering", "No outcome", "Cost per task"]
+        : ["Kind", "Sessions", "Steering", "No outcome", "Cost"],
+    });
+    table.classList.add("perf-table", "perf-kinds-table");
+    // The unsaid row is drawn last and left out of the shading: it is not
+    // a kind doing badly, it is a kind nobody named, and shaded red it
+    // would read as the worst kind of work on the page.
+    const shown = [...rows];
+    const heat = {
+      rate: heatRanks(shown.map((row) => row.closureRate), "high"),
+      oneShot: heatRanks(shown.map((row) => row.oneShotRate), "high"),
+      steers: heatRanks(shown.map((row) => (row.steeringVisible === false ? null : row.interventions)), "low"),
+      waste: heatRanks(shown.map((row) => (row.sessions ? row.waste / row.sessions : null)), "low"),
+      // Per task where tasks are handed out, else the kind's whole spend;
+      // null and not nought for a kind with no task to divide by, so its
+      // dash is not shaded as the cheapest kind on the page.
+      cost: heatRanks(shown.map((row) => (hasTasks() ? row.costPerTask || null : row.cost || null)), "low"),
+    };
+    // The name cell: the kind's word, the way the session table builds its
+    // own (`el` takes words, not a node).
+    const nameCell = (label) => {
+      const name = el("span", "perf-row-name");
+      name.append(el("span", "perf-row-title", label));
+      return name;
+    };
+    const cells = (row, at) => [
+      el("span", "perf-kind-sessions", String(row.sessions)),
+      ...(hasTasks()
+        ? [
+          statusCell(`${row.finished} of ${row.tasks}`, row.finished ? "chip-ok" : row.tasks ? "" : "chip-none"),
+          heatCell(percent(row.closureRate), at == null ? null : heat.rate[at]),
+          row.finished && !row.oneShotKnown ? el("span", "chip chip-none", "not measured") : heatCell(percent(row.oneShotRate), at == null ? null : heat.oneShot[at]),
+        ]
+        : []),
+      row.steeringVisible === false ? statusCell("not visible", "chip-none") : heatCell(one(row.interventions), at == null ? null : heat.steers[at]),
+      // Sessions that bought nothing - closed, discarded, reverted - as a
+      // count of the kind's sessions, which is the tile above said by kind.
+      heatCell(row.sessions ? `${row.waste} of ${row.sessions}` : "—", at == null ? null : heat.waste[at]),
+      hasTasks()
+        ? heatCell(row.costPerTask ? money(row.costPerTask) : "—", at == null ? null : heat.cost[at])
+        : { keep: true, node: heatCell(row.cost ? money(row.cost) : "—", at == null ? null : heat.cost[at]) },
+    ];
+    shown.forEach((row, at) => {
+      table.append(
+        listRow({
+          name: nameCell(row.name),
+          note: WORK_MEANING[row.key] ?? null,
+          cells: cells(row, at),
+          // A press narrows the ranking below to this kind - the same pick
+          // the filter box offers, so the two agree on what a kind is.
+          onOpen: () => pick(`work:${row.key}`),
+        }),
+      );
+    });
+    if (unsaid?.sessions) {
+      const line = listRow({
+        name: nameCell(unsaid.name),
+        note: "the agent never said which kind - name_session with a kind, or an agent with no tool to say it",
+        cells: cells(unsaid, null),
+      });
+      line.classList.add("perf-kind-unsaid");
+      table.append(line);
+    }
+    panel.append(table);
+    panel.append(
+      el(
+        "p",
+        "console-caveat",
+        "The kind is the agent's own word, said through name_session; nothing here guesses one. Steering is the mean stepping in a finished task took; No outcome counts the sessions that came to nothing - closed, discarded or reverted.",
+      ),
+    );
+    return panel;
+  }
+
   // ---- pull-cost ----
 
   /**
@@ -488,7 +662,7 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
     const phases = cost.phases ?? {};
     const panel = el("section", "console-panel perf-cost");
     const heading = el("h3", "panel-heading", "What a change costs here");
-    heading.append(helpMark("a kind of work", KIND_HELP));
+    heading.append(helpMark("a kind of change", KIND_HELP));
     panel.append(heading);
 
     const kindTile = (key, label) => {
@@ -673,7 +847,7 @@ export function performanceView({ range, filters = NO_FILTERS, data, failed, com
       if (mark) name.append(mark);
       const line = listRow({
         name,
-        note: [row.title ? row.actor?.name : null, harnessOf(row), row.lastAt ? `active ${ago(row.lastAt)}` : null].filter(Boolean).join(" · "),
+        note: [row.work?.name ?? null, row.title ? row.actor?.name : null, harnessOf(row), row.lastAt ? `active ${ago(row.lastAt)}` : null].filter(Boolean).join(" · "),
         aside: [row.repository, whereLabel(row.where)].filter(Boolean).join(" · ") || null,
         live: row.live > 0,
         cells: [

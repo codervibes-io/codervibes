@@ -111,7 +111,7 @@ function fileList(files = []) {
  * names them. Only the movers: a card listing ten figures of which two
  * moved is a card nobody reads to the end of.
  */
-function movedFigures(delta = {}) {
+export function movedFigures(delta = {}) {
   const rows = el("dl", "harness-figures");
   const order = ["oneShotRate", "closureRate", "failureRate", "costPerTask", "steersPerTask", "interventions", "timeToClosure", "tokensPerTask"];
   let any = false;

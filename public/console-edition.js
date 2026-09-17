@@ -55,12 +55,18 @@
 //                     (page-git-hosts.js) - useful, and never a tool a
 //                     session calls - so the Tools page must not tell a
 //                     reader to connect one and wait for it to appear.
+//   hasEvaluations    the Evaluations page (console-evaluations.js). The
+//                     one predicate that is not "this edition has none of
+//                     the thing": the hosted product has the page and the
+//                     local one points at it, because it is the answer to
+//                     the question the Performance page leaves open.
 let tasks = true;
 let workspaces = true;
 let agents = true;
 let sandboxes = true;
 let accessTrail = true;
 let connectorTools = true;
+let evaluations = true;
 
 /**
  * This installation is one person on their own machine.
@@ -77,6 +83,7 @@ export function onePerson() {
   sandboxes = false;
   accessTrail = false;
   connectorTools = false;
+  evaluations = false;
 }
 
 /** Whether work is handed out as tasks with verdicts, so a row can finish one. */
@@ -96,3 +103,12 @@ export const hasAccessTrail = () => accessTrail;
 
 /** Whether connectors are services an agent can call, rather than git hosts. */
 export const hasConnectorTools = () => connectorTools;
+
+/**
+ * Whether the Evaluations page is here: the worst sessions, what to
+ * change, whether it worked. It is the hosted product's - a loop a team
+ * runs on its repositories, with a name on each adoption - and the one
+ * thing the local edition's Performance page names as being elsewhere
+ * (console-performance.js), rather than leaving off in silence.
+ */
+export const hasEvaluations = () => evaluations;

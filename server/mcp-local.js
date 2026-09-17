@@ -59,10 +59,12 @@ const instructions = (user) =>
   `follow what actually worked rather than what a quote suggests.\n\n` +
   `**And say what you are doing.** Once you have read the first ask, ` +
   `name_session with what it is for, in a few words, as the person would ` +
-  `put it. That is this session's name on the Executors page and in Search; ` +
-  `until you say, it is named after the first line of the ask. Say it again ` +
-  `if the work turns into something else - a different task, not a detail or ` +
-  `a next step of the same one.\n\n` +
+  `put it, and which kind of work it is - code, incident, analysis, ` +
+  `experiment, review, question, ops or writing. That is this session's ` +
+  `name on the Executors page and in Search, and its row on Performance; ` +
+  `until you say, it is named after the first line of the ask and its kind ` +
+  `is unsaid. Say it again if the work turns into something else - a ` +
+  `different task, not a detail or a next step of the same one.\n\n` +
   `There is nothing else here. This CoderVibes has one person - you are ` +
   `running on their machine - so there is no room to talk in, nobody to hand ` +
   `a task to, and no connected service to reach. Everything else you do, you ` +

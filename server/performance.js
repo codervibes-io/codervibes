@@ -51,7 +51,8 @@
 //
 // Everything here is pure - sessions and pull requests in, rows out - so a
 // test can hand it a year of history in a line and so the routes stay thin.
-import { guidanceOf, autonomyOf, outcomeOfPulls, mainModelOf } from "./sessions.js";
+import { guidanceOf, autonomyOf, outcomeOfPulls, mainModelOf, workOf } from "./sessions.js";
+import { LABEL as WORK_LABEL, UNSAID as WORK_UNSAID, WORDS as WORK_WORDS } from "./work-kinds.js";
 import { providerOf } from "./models.js";
 import { KINDS as STEER_KINDS } from "./steer-kinds.js";
 
@@ -604,6 +605,10 @@ export function facetsOf(session) {
     // which only holds while one function decides what a thing is called.
     sandbox: groupOf(session, "sandbox"),
     provider: groupOf(session, "provider"),
+    // And what kind of work it was, in the same words the kinds table
+    // groups by - null key when the agent never said, so the filter offers
+    // no "Unsaid" to pick and the row's note prints nothing for it.
+    work: groupOf(session, "work").key === UNREPORTED ? { key: null, name: null } : groupOf(session, "work"),
     owner: session.owner ?? null,
     startedAt: session.startedAt ?? null,
     // Where the work sits relative to the workspace reading the ranking -
@@ -1018,7 +1023,7 @@ export function trend(sessions, pulls = [], { range = DEFAULT_RANGE, now = Date.
  * laptop and the loop in a sandbox wants the same figures for each side of
  * that choice, over everything, not a row per agent.
  */
-export const DIMENSIONS = ["provider", "harness", "sandbox", "user"];
+export const DIMENSIONS = ["provider", "harness", "sandbox", "user", "work"];
 
 /**
  * Which group a session falls in, for a dimension: a key and a name.
@@ -1056,6 +1061,18 @@ export function groupOf(session, dimension, { harnessLabel = (kind) => kind } = 
     }
     case "user":
       return { key: session.owner ?? UNREPORTED, name: session.owner ?? "Not reported" };
+    // What kind of work it was, in the agent's own word (work-kinds.js). A
+    // session whose agent never said is `unreported` like any other
+    // dimension's remainder, and the page draws that row as "Unsaid" -
+    // the one dimension where the remainder is drawn, because "how many
+    // never said" is itself the figure a person acts on.
+    case "work": {
+      // Only a word on the list is a kind: noteWork refuses the rest at
+      // the record, and a stray string that got there some other way is
+      // read as unsaid rather than drawn as a row nobody planned for.
+      const work = workOf(session);
+      return work && WORK_WORDS.includes(work) ? { key: work, name: WORK_LABEL[work] } : { key: UNREPORTED, name: WORK_LABEL[WORK_UNSAID] };
+    }
     default:
       throw new Error(`Not a dimension: ${dimension}`);
   }

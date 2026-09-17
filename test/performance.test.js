@@ -363,7 +363,7 @@ test("a session is grouped by its heaviest model's vendor, its harness kind, whe
   assert.deepEqual(perf.groupOf(session({ machine: { id: "laptop:mbp", name: "mbp", host: "laptop" } }), "sandbox"), { key: "laptop", name: "Laptop" });
   assert.deepEqual(perf.groupOf(session({ kind: "resident" }), "harness", labels), { key: "agentd", name: "CoderVibes loop" });
   assert.throws(() => perf.groupOf(session(), "colour"), /Not a dimension/);
-  assert.deepEqual(perf.DIMENSIONS, ["provider", "harness", "sandbox", "user"]);
+  assert.deepEqual(perf.DIMENSIONS, ["provider", "harness", "sandbox", "user", "work"]);
 });
 
 test("interventions are every time a person stepped in - a cut short included - and never a tool failure the agent recovered from", () => {
@@ -426,7 +426,7 @@ test("compareAll answers every dimension at once, with the range's totals", () =
   assert.equal(all.sessions, 2);
   assert.equal(all.tasks, 1, "one of the two was asked for a piece of work");
   assert.equal(all.finished, 1);
-  assert.deepEqual(Object.keys(all.dimensions), ["provider", "harness", "sandbox", "user"]);
+  assert.deepEqual(Object.keys(all.dimensions), ["provider", "harness", "sandbox", "user", "work"]);
   assert.deepEqual(all.dimensions.provider.map((row) => row.name), ["Anthropic", "OpenAI"]);
   assert.deepEqual(all.dimensions.harness.map((row) => row.name), ["AGENTD", "CODEX"], "named by the caller's labels");
   assert.deepEqual(all.dimensions.sandbox.map((row) => row.name), ["e2b sandbox"], "the session that said no machine is not a bar");
@@ -1000,4 +1000,44 @@ test("a row says how much code it wrote and how much of it survived review, over
   assert.equal(compared.acceptance, 0.7);
   assert.equal(compared.written, 300);
   assert.equal(compared.writtenPerFinished, 300, "one task finished, three hundred lines to do it");
+});
+
+test("sessions group by the kind of work the agent said, and the ones that never said are the Unsaid remainder", () => {
+  const sessions = [
+    { ...session({ owner: "ada", pulls: [pull("o/r#1", "merged")], cost: 4 }), work: "code" },
+    { ...session({ owner: "ada", pulls: [pull("o/r#2", "closed")], cost: 2 }), work: "code" },
+    { ...session({ owner: "bob", cost: 1 }), work: "incident" },
+    session({ owner: "bob", cost: 3 }),
+    { ...session({ owner: "bob" }), work: "bugfix" },
+  ];
+  const compared = perf.compare(sessions, [], { dimension: "work", now: NOW });
+  assert.deepEqual(compared.rows.map((row) => [row.key, row.name, row.sessions]), [["code", "Code", 2], ["incident", "Incident", 1]]);
+  const code = compared.rows[0];
+  assert.equal(code.tasks, 2);
+  assert.equal(code.finished, 1);
+  assert.equal(code.closureRate, 0.5);
+  assert.equal(code.cost, 6);
+  assert.equal(code.costPerTask, 3);
+  assert.equal(code.waste, 1, "the closed one bought nothing");
+  // Nothing on the record is not a kind, and neither is a word the record
+  // layer would have refused - the page reads only what noteWork kept, so
+  // a stray string on a record is read as unsaid rather than drawn.
+  assert.equal(compared.unreported.name, "Unsaid");
+  assert.equal(compared.unreported.sessions, 2, "the record that never said and the one with a word off the list are both unsaid");
+  assert.deepEqual(
+    perf.compare(sessions, [], { dimension: "work", now: NOW }).rows.map((row) => row.key),
+    ["code", "incident"],
+    "the word off the list is a kind nobody may group by",
+  );
+
+  // Every dimension at once now includes it, and the session row carries it
+  // for the filter - a null key where the agent never said, so there is no
+  // "Unsaid" to pick.
+  const all = perf.compareAll(sessions, [], { range: "7d", now: NOW });
+  assert.ok(all.dimensions.work, "the page reads the kinds table off compareAll");
+  assert.equal(all.unreported.work.sessions, 2);
+  const rows = perf.rank(sessions, [], { by: "sessions", now: NOW }).rows;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  assert.deepEqual(byKey.get(sessions[0].id).work, { key: "code", name: "Code" });
+  assert.deepEqual(byKey.get(sessions[3].id).work, { key: null, name: null });
 });

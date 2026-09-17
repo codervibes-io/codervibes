@@ -250,6 +250,41 @@ test("name_session names the session the hooks are writing, not a record of the 
   );
 });
 
+test("name_session says which kind of work it is, and a kind off the list is refused without losing the name", async () => {
+  const { body } = await rpc(
+    {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "tools/call",
+      params: { name: "name_session", arguments: { title: "Idempotent deploy script", kind: "ops" } },
+    },
+    { session: mcpSession },
+  );
+  assert.equal(body.result.isError, undefined, said(body.result));
+  assert.match(said(body.result), /ops work/, "the answer says the kind back, so the agent knows it landed");
+  let detail = await get(`/api/sessions/${sessionId}`);
+  assert.equal(detail.body.session.work, "ops");
+
+  // A word the agent made up: the name is kept, the kind is not, and the
+  // answer names the list - the record can only ever hold one of the eight.
+  const invented = await rpc(
+    {
+      jsonrpc: "2.0",
+      id: 12,
+      method: "tools/call",
+      params: { name: "name_session", arguments: { title: "Idempotent deploy script, again", kind: "bugfix" } },
+    },
+    { session: mcpSession },
+  );
+  const answer = said(invented.body.result);
+  detail = await get(`/api/sessions/${sessionId}`);
+  assert.equal(detail.body.session.work, "ops", "an invented word did not replace the one said before");
+  if (!invented.body.result.isError) {
+    assert.equal(detail.body.session.title, "Idempotent deploy script, again", "the name still landed");
+    assert.match(answer, /not a kind of work here; the kinds are code, incident/);
+  }
+});
+
 test("discover finds the session by a word out of the prompt, and open_session reads it whole", async () => {
   // The session has to have settled before the index has it (search.js), so
   // it is ended the way a terminal ends it and then asked for.
